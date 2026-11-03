@@ -25,14 +25,20 @@ fail-closed**. No hardware writes.
 > 256-byte trailer is enforced (no visible verifier) and how to deliver a file
 > (custom UFP sender or patched exe). Hardware acceptance is untested.
 >
-> **Phase 1 result (partial):** the movie record table is `av-cam.bin 0x87990C`
-> (stride 0x54, 16 entries); slot 801 at `0x879960` is the 1920×1080 candidate.
-> Width/height and rate bytes are known; 3:2 **does exist** in the libObj aspect
-> enums (the earlier "no 3:2" note was wrong), gated by a `0x2B` mask in
-> `FeaCore::SetRecAspect`. The real blocker is the request path: `libObj`'s
-> `FMTsize` has no 1920×1280 representation and the request validates size/sizeh/
-> frate against saved state. H.264 level remains unknown (closed encoder blobs).
-> No patched image was written. See repo `docs/patch-map.md`.
+> **Phase 1 result (partial, audit-corrected):** the movie record table is
+> `av-cam.bin 0x87990C` (stride 0x54, 16 entries); the 24p HD record is **822 @
+> `0x879C54`**, not 801. `+0x0C` is a match key, not a setter — editing it
+> duplicates and shadows 822. The movie VALUEID namespace has **no 3:2**
+> (`FeaCore::SetRecAspect` `0x2B` mask rejects it), and `libObj`'s `FMTsize` has
+> no 1920×1280. Option A alone is insufficient; a new VALUEID and size code are
+> required. H.264 level remains unknown (closed encoder blobs). No patched image
+> was written. See repo `docs/patch-map.md`.
+>
+> **M1/M2 result:** encoder w/h come from `MPR::VResolution` via
+> `GetPictureSize` (`libmpr 0x87FDD4`, 13 codes, no 1920×1280). Test-only route:
+> patch `0x87FE0A` (code 2 height) + record 822 geometry. Proper route: repurpose
+> code 4 (or 12) and make libObj request it. Aspect does not gate geometry; 16:9
+> metadata is wrong DAR but records. Level still unknown.
 
 ---
 
@@ -126,7 +132,7 @@ Open `out/avcam.elf` (from `research/scripts/mkelf.py`) and the ARM ELFs.
   older `0x834B14` reference is the 7×24-byte capture grid, not this table.
 - Find where the encoder is opened: `picture_width/height`, `canvas_size`,
   `valid_size`, level/profile, and the SPS writer.
-- Resolve slot 801 (`0x879960`) and trace its request path from the UI/param
+- Resolve slot 822 (`0x879C54`) and trace its request path from the UI/param
   layer. Candidate bytes and open items: `docs/patch-map.md`.
 
 ### 5.2 UI and media layers
