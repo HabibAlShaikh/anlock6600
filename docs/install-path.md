@@ -1,7 +1,9 @@
 # Install path (G0) — can a modified a6600 firmware be installed?
 
-Status: **unresolved, fail-closed.** This document maps what the stock update
-actually verifies and where. No camera write, flash or service command was sent.
+Status: **unresolved, fail-closed — but no cryptographic verifier was found in any
+extractable update code.** The 256-byte FDAT trailer is still unexplained, and the
+loader/ROM is not available for inspection. No camera write, flash or service
+command has been sent.
 
 Target: ILCE-6600, firmware **1.10** (`38114_02.2020071501`), ARMv7 / CXD90045.
 Input: official `Update_ILCE6600V110.exe`.
@@ -39,151 +41,144 @@ Measured on the v1.10 file:
 
 The plaintext payload is **not** per-file signed or encrypted: `av-cam.bin` is a
 raw ARM image (`ORIL`), `nflasha7`/`nflasha15` are plain ext2 and `nflasha3` is a
-plain FAT image. Everything that protects them sits in the FDAT wrapper.
+plain FAT image.
 
-## 2. What each layer actually checks
+## 2. What each layer checks
 
-| Layer | Protection | Who checks | Evidence |
-|---|---|---|---|
-| DAT chunks | CRC32 (`DEND`) | PC updater / receiver | `fwtool/sony/dat.py`; verified above |
-| PC updater self-check | Authenticode (`WinVerifyTrust`, `CryptQueryObject`, `CertFindCertificateInStore`) | PC, on the `.exe` | PE delay imports; no firmware crypto imports |
-| FDAT header | CRC32 over the header (`FdatHeader.checksum`) | receiver | `fwtool/sony/fdat.py:256` |
-| FDAT body | AES-CBC with **fixed, public** keys + 16-byte IV + 256-byte trailer | receiver | `fwtool/sony/constants.py`; trailer layout below |
-| Payload files | per-file CRC32 + size in `*_sum/*.sum` | update body on camera | `uc_crc32sum.elf -c`, `config.xml` |
-| Partition images | none beyond the above | raw write | `us_mkfs.sh`, `loader_writer.sh` |
-| Boot of `/usr`, `/rootfs`, `/system` | no verity/IMA/signature found | kernel/userland | `system/vmlinux.bin` string scan |
-
-Key detail: `fwtool` decrypts Gen4 (`CXD90045`) but does not implement encryption
-(`AesCbcCrypter.encrypt` raises `Encryption not supported`). That is consistent
-with a trailer that cannot be reproduced: `[ciphertext][16-byte IV][256-byte
-block]`. The 256-byte block is high-entropy and non-zero, i.e. not a CRC, not an
-AES IV and not a symmetric MAC; an RSA-2048 signature (or an RSA-wrapped key) is
-the natural reading. This is an inference, not a decoded structure.
-
-### 2.1 The PC side does not verify the firmware
-
-`Update_ILCE6600V110.exe` is a 5-section PE32 whose imports contain **no** RSA,
-SHA or firmware-verification API. The only trust API is Authenticode, and it is
-delay-imported for the executable itself:
-
-```
-CRYPT32.dll: CertCloseStore, CertFindCertificateInStore,
-             CertFreeCertificateContext, CertGetNameStringW, CryptMsgClose,
-             CryptMsgGetParam, CryptQueryObject, WinVerifyTrust
-```
-
-Observed: the PC tool carries no firmware signature check. Inference: the
-camera is the only gate. Consequence: a custom UFP sender (or a patched exe with
-its self-check removed) could deliver a modified DAT; the obstacle is camera-side
-verification, not the host tool. Note that replacing the embedded DAT also
-invalidates the exe's own Authenticode hash, so the stock exe would refuse to run
-unless that self-check is patched out.
-
-## 3. Where the verifier is not
-
-The update body on the camera is `out/a6600_updater.img` — a 47-file CRAMFS also
-shipped as `usr/bin/udtrbody.bin`. Its scripts and ELFs check **only** CRC32:
-`config.xml` drives `us_crc32sum*.sh` → `uc_crc32sum.elf` /
-`ul_crc32sumprfile.so`, then `edisx.elf` / `uc_mkfs.elf` / `ud_wbi_drop.elf`
-write partitions. There is no asymmetric crypto, certificate or signature string
-in any of those files.
-
-The camera-side updater code reachable in this payload is also decrypt-only:
-
-| File | Relevant symbols / strings |
-|---|---|
-| `usr/bin/crypter.elf` | `Dec_Scramble(Init)`, `Fsys_*`, `CrcChecker.cpp`, `calc_crc` |
-| `usr/lib/libupdaterufp.so` | UFP receive path, `Dec_Scramble(Init)`, `udtr_*`, `set_model/region/version` |
-| `usr/lib/libupdatertalk.so` | `AES_set_decrypt_key`, `AES_decrypt` |
-| `usr/lib/libupdatercommon.so` | file/FS plumbing, `memcmp`, `dlopen` |
-
-None of them imports `RSA_verify`, `EVP_DigestVerify`, `SHA256_*` or any other
-signature primitive. `libcrypto.so` on the camera is the normal TLS stack.
-
-`uc_mkfs.elf` does not touch the updater partition: before formatting a vfat
-entry it skips `/dev/nflasha1` and `/dev/nflasha13` unconditionally, and formats
-`/dev/nflasha2` only in the `full` pass (`app` mode leaves `/setting` alone).
-The updater partition is therefore neither supplied nor reformatted by this
-payload. (Predicate at `0x8820`, `full`/`app` passes at `0x8984`/`0x8990`.)
-
-**Inference:** if the 256-byte trailer is enforced, the verifier lives outside
-this update payload — most likely in the persistent updater partition
-`/dev/nflasha1` ("SYSTEM (Updater)", 8 MB vfat, `mount.conf`), or in boot ROM.
-That partition is not in the extracted tree because Sony does not ship it in
-`firmware.dat`.
-
-## 4. Boot-time verification of the partitions we would patch
-
-Nothing indicates that `/usr` (`nflasha15`, raw ext2), `/rootfs` (`nflasha7`,
-raw) or `/system` (`nflasha3`, vfat) is verified at boot:
-
-- `vmlinux.bin` has no `dm-verity`, `IMA`, module-signature or secure-boot
-  strings; the custom `ssboot/image.c` code only loads images.
-- `/setting` (`nflasha2`, writable vfat) is referenced at boot by
-  `rootfs/sbin/init` (`/setting/env.txt`, `/setting/mode/dmode`), and
-  `usr/bin/change_mode.sh` writes `/setting/mode/preload`, intended to select an
-  `LD_PRELOAD`-style library. Enablement is not verified.
-- `rootfs/sbin/init` contains a `launch_shell()` path for
-  `/usr/bin/launch_shell.elf`, which opens `/dev/ttycons` or `/dev/console` and
-  execs `/bin/ash`; the kernel command line uses `console=ttyAM0`. A UART shell
-  is therefore a plausible runtime path (hardware access required, not tested).
-- `/wbi` (`nflasha5`) is a separate compressed warm-boot blob, mounted as a
-  filesystem entry (`mount.conf` type `wbi`), not the source of `/usr`.
-
-This is absence of evidence, not proof of no verification. A boot-time check
-could still exist in the loader or in `nflasha1`.
-
-## 5. Alternative install paths
-
-| Path | Status | What would settle it |
+| Layer | Protection actually found | Evidence |
 |---|---|---|
-| A. Modified official update | **Blocked (likely)** by the 256-byte FDAT trailer. Re-encryption is implementable (AES-CBC, public keys) but the trailer cannot be regenerated without Sony's private key. The PC tool itself does not verify the firmware. | Dump `nflasha1`, find the FDAT verifier, confirm whether the trailer is checked. If it is not, A becomes viable with a custom sender. |
-| B. Runtime shell / write to `/usr`, `/rootfs` or `/setting` | **Unknown, plausible.** `init` contains a `launch_shell()` path on `ttyAM0` and references `/setting/env.txt`; `/usr` is mounted from ext2/cramfs/vfat. | Locate UART pads, confirm the shell is enabled, check whether `/usr` is mounted rw. A shell would allow a reversible runtime patch without touching the signed update path. |
-| C. Hardware NAND write | **Unknown, high risk.** Requires a full dump and a loader that does not verify. | Identify the NAND part, dump all partitions, compare the loader against `nflasha1`. |
-| D. Network exploit (`orb-server`, web API) | **Out of scope.** A separate vulnerability project with poor reliability. | Only with a tested restore path. |
+| PC updater self-check | Authenticode on the `.exe` only; no firmware crypto | PE delay imports `WinVerifyTrust`, `CryptQueryObject`, … |
+| DAT container | CRC32 (`DEND`) | `crypter.elf` `CrcChecker` 0xadfc/0xae60; verified |
+| UFP receive | none; writes `/tmp_updater/Firm.dat` | `libupdaterufp.so` 0x1622–0x1660 |
+| FDAT wrapper | AES with a hard-coded key; no signature path found | `libupdatertalk.so` `Dec_Scramble`; no RSA/EVP imports |
+| FDAT trailer | **never read** by any extractable update code | see §3 |
+| Update body | CRC32 sums driven by its own `config.xml` | `libupdaterbody.so` `GetBody` 0xfa85 |
+| Partition images | none beyond the above | `us_mkfs.sh`, `loader_writer.sh` |
+| Boot of `/usr`, `/rootfs`, `/system` | no verity/IMA/signature found | `vmlinux.bin` string scan |
 
-Path B is the only one that could work without breaking the signature, and it is
-the one this project should price first: the camera already has the debug hooks,
-and `/setting` is a plain writable FAT partition.
+## 3. The camera-side path is fully visible — and CRC-only
 
-## 6. G0 verdict
+The update runs in the normal OS, not from a separate updater partition:
 
-**G0: FAIL (unresolved).** The stock update is CRC-checked and encrypted with
-public keys, but the Gen4 FDAT wrapper carries a 256-byte block that is
-consistent with a signature, and `fwtool` cannot reproduce it. The verifier is not
-in the update payload, so enforcement cannot be proven or disproven from the
-files we can extract.
+1. `usr/bin/im.elf` (`DT_NEEDED libIMDB.so`) loads `libIMDB.so`.
+2. `libIMDB.so` has a module table entry `"libupdaterufp.so", "udtr_ufp_init",
+   "udtr_ufp_exit"` (offset `0x4d39`) and `dlopen`s it.
+3. `libupdaterufp.so` receives the file, mounts a work area and writes
+   `/tmp_updater/Firm.dat` (`0x1622–0x1660`). It verifies nothing.
+4. It calls `system("crypter.elf /tmp_updater/Firm.dat")` (`0x16e8`), then
+   `up.sh ver` or `up.sh user` (`0x1990`, `0x19dc`).
+5. `crypter.elf` walks the `\x89UFU` chunk list (`0xb2a0–0xb3fc`), finds `FDAT`,
+   and runs `CrcChecker` over the whole container up to `DEND` (`0xadfc–0xaed6`,
+   `memcmp` of the `DEND` tag and a CRC32 compare). No other integrity check.
+6. `crypter.elf` decrypts with `Dec_Scramble` and writes the body image to
+   `/tmp_updater/updater/bodyimg`, skipping a 0x200-byte header (`0xc040–0xc112`).
+7. It loop-mounts `bodyimg` as cramfs at `/tmp_updater/updater/bodyfs`
+   (`0xc4c2–0xc4ee`) and `dlopen`s
+   `bodylib/libupdaterbody.so` (`0xc516`), unless `/root/IAMUPDATER` exists, in
+   which case it uses the built-in `/usr/bin/udtrbody.bin` instead.
+8. `libupdaterbody.so` unpacks to `/tmp_updater/updater/update` and runs the
+   `config.xml` scripts (`chkfirm.sh`, `us_crc32sum*.sh`, `uc_mkfs.elf`,
+   `edisx.elf`, `ud_wbi_drop.elf`, …), which check per-file CRC32 sums.
 
-Do not patch and flash on this evidence. The next concrete step is a read-only
-dump of `nflasha1` (and the loader area `nflashaB0`) to locate the FDAT verifier,
-followed by the runtime-access investigation (path B). Both are prerequisites for
-any write. The PC-side question is closed: the updater tool does not check the
-firmware.
+Consequences:
 
-First actions, in order:
+- The body that validates the payload is supplied **by the payload** and is
+  covered only by the payload's own CRC lists → the CRC layer is not a security
+  boundary against someone who rebuilds the container.
+- `crypter.elf` mounts `/dev/nflasha2` and then `/dev/nflasha1` only to read
+  `dat2` (model), `dat3` (region) and `updater/dat4` (version) at `0xd6d4`/
+  `0xd750`. They are not a verifier.
 
-1. Dump `nflasha1` and `nflashaB0`; hash them and look for an RSA/ECDSA verify
-   routine or a public key in the updater OS.
-2. Inspect the mainboard for `ttyAM0`/`/dev/ttycons` test points and confirm
-   whether `launch_shell.elf` is reachable (read-only boot observation).
-3. Only if 1 or 2 succeeds, build the recovery path (§7) before touching a
-   movie table.
+## 4. The 256-byte trailer
+
+No extractable update component reads it:
+
+| File | EOF/trailer behaviour |
+|---|---|
+| `libupdaterufp.so` | only `lseek(fd,0,SEEK_END)` for file size (`0x1d16`); reads 4/2-byte fields; no last-0x100 read |
+| `crypter.elf` | reads 4-byte chunk lengths and the 12-byte `DEND`; no seek-to-EOF-minus-N, no 0x100/0x110 constant |
+| `libupdaterbody.so` | forward-only extraction; no `SEEK_END`, no negative offset |
+| Update scripts/ELFs | CRC32 only |
+| PC updater | no firmware crypto at all |
+
+A scan of 48 update-path files found **zero** PEM/DER/RSA public keys and no
+`RSA_verify`/`EVP_DigestVerify` imports outside the TLS stack (`libcrypto`,
+`libssl`, `wpa_supplicant`, `orb-server`). The only crypto primitive in the
+update path is symmetric AES with a hard-coded key in `libupdatertalk.so`.
+
+**Inference:** if the 256-byte trailer is enforced, the check is outside the
+extractable code (loader/ROM or a closed service). It is not what
+`crypter.elf`/`libupdaterbody.so` check.
+
+## 5. Boot-time verification
+
+Nothing indicates that `/usr` (`nflasha15`), `/rootfs` (`nflasha7`) or `/system`
+(`nflasha3`) is verified at boot:
+
+- `vmlinux.bin` has no `dm-verity`, IMA, module-signature or secure-boot strings.
+- `rootfs/sbin/init` has **no updater branch** (`IAMUPDATER`, `/tmp_updater`,
+  `udtrbody`, `crypter`, `up.sh` all absent). It mounts the partitions and runs
+  `bootin.elf` → `im.elf`.
+- `usr/bin/bootin.elf` launches `im.elf`, reads `/setting/mode/dmode` and
+  `/setting/mode/preload`, and verifies nothing (no CRC/hash imports).
+- `/usr` and `/rootfs` are mounted **read-only** (ext2/cramfs paths); `/setting`
+  is rw vfat.
+
+Absence of evidence, not proof: the loader (`nflashaB0`) and ROM were not
+available.
+
+## 6. Revised G0 verdict
+
+**G0: unresolved, fail-closed.** The prior claim that "Gen4 signature
+verification blocks modified updates" is **overstated**: no verifier exists in
+the entire extractable update path, and the trailer is never read by it. What
+remains is one unexplained 256-byte block and an uninspectable loader/ROM.
+
+The install path is therefore **plausibly open but unproven**. The blockers are
+now engineering plus one unknown:
+
+1. Rebuild the DAT/FDAT: match the exact AES framing (fwtool decrypts Gen4 as
+   CBC; `libupdatertalk` exposes an ECB primitive — the two must be reconciled),
+   recompute the DAT `DEND` CRC, and decide what to do with the trailer.
+2. Recompute every `*_sum/*.sum` CRC32 after changing a payload file.
+3. Deliver it: a custom UFP sender, or the stock exe with its Authenticode
+   self-check removed.
+4. Prove acceptance on a sacrificial unit with a **byte-identical repack** first
+   (same firmware, recomputed container). An accepted repack proves the trailer
+   is not enforced without changing camera functionality; a rejected one should
+   abort before any write.
+
+Do not flash the user's camera on this evidence. A hardware acceptance test is a
+separate, explicitly approved action.
 
 ## 7. Preconditions before the first write
 
-1. Full dump of at least `nflasha1`, `nflasha2`, `nflasha3`, `nflasha5`,
-   `nflasha7`, `nflasha15` and `nflashaB0`, with hashes.
-2. A **tested** restore of that dump to the same unit.
-3. A second unit, or a service option, if the first restore is not proven.
-4. Bench setup: charged battery or dummy battery, SD card, room temperature.
-5. The patch is limited to one movie format slot and is reversible by flashing
-   the stock v1.10 payload again.
+1. Offline repack tool with a decrypt→encrypt round-trip that reproduces the
+   original container byte-for-byte (or documents exactly where it cannot).
+2. A full dump of `nflasha1`, `nflasha2`, `nflasha3`, `nflasha5`, `nflasha7`,
+   `nflasha15`, `nflashaB0`, with hashes.
+3. A **tested** restore of that dump to the same unit.
+4. A sacrificial unit or a service option, if the restore is not proven.
+5. A UFP sender or a patched exe, tested against the camera's USB descriptors
+   without sending firmware.
 
-## 8. Open questions
+## 8. Claims corrected in this pass
 
-- Is the 256-byte trailer an RSA signature, and which key verifies it?
-- Does `nflasha1` contain the verifier, and is it reachable from the running OS?
-- Is `/usr` mounted read-only, and does anything hash it at boot?
-- Does `/wbi` cache any of `/system` or `/usr`, so a patched file would be
-  shadowed until the WBI is regenerated?
-- Can `/setting/mode/preload` be written through any exposed interface?
+- "Gen4 FDAT signature verification blocks modified updates" → **not
+  supported** by the extractable code. No verifier found; the trailer is not
+  read. Enforcement, if any, is outside the visible path.
+- "The verifier lives in `nflasha1`" → **wrong**. `nflasha1`/`nflasha2` are
+  mounted to read `dat2`/`dat3`/`dat4` (model/region/version), not to verify.
+- "The 256-byte block is an RSA signature" → still plausible (size/entropy), but
+  unproven and not read by any extracted component.
+- "The update runs from a separate updater partition" → **wrong for this path**.
+  It runs from the normal OS via `im.elf → libIMDB → libupdaterufp → crypter`.
+
+## 9. Open questions
+
+- Is the trailer checked by the loader/ROM, or is it vestigial?
+- What is the exact AES mode/framing the camera expects (CBC vs ECB, block
+  checksums, IV placement)?
+- Can the stock `.exe` be used after defeating its Authenticode self-check, or is
+  a UFP protocol reimplementation required?
+- Does an interrupted update leave a recoverable state?

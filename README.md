@@ -6,8 +6,9 @@ specifically whether an **open-gate (3:2) 1080p** recording mode can be enabled.
 
 **Status: negative so far.** No stock setting or PTP property was found that
 enables a taller-than-16:9 movie frame; service-mode capability data is still
-unknown. Doing it would require patching the signed firmware, which is expected
-to be rejected (not tested on hardware).
+unknown. Doing it would require patching the firmware. No signature verifier was
+found in the extractable update path, so an install is plausibly possible, but it
+is unproven and has not been tested on hardware.
 
 This repository contains **text, offsets, scripts and hashes only**. It does not
 contain Sony firmware or decrypted firmware images; see [Reproduce](#reproduce).
@@ -26,12 +27,12 @@ contain Sony firmware or decrypted firmware images; see [Reproduce](#reproduce).
   sizes, is 4K-capable, and 1920×1280 is well inside its limits. The blockers are
   the mode tables, LiroSeq validators, UI, sensor readout mode and SPS metadata.
 - The a6600 has an **8-bit 4:2:0 AVC** encoder and no HEVC encoder assets.
-- Modified update packages are blocked by the **Gen4 FDAT wrapper**: public
-  symmetric keys decrypt the payload, but the 256-byte trailer that follows the
-  ciphertext cannot be regenerated. The PC updater itself does not verify the
-  firmware; the camera is the gate. See
-  [`docs/install-path.md`](docs/install-path.md) for what is verified, where the
-  verifier must live, and the remaining runtime options.
+- No cryptographic verifier was found in any extractable update code: the update
+  runs from the normal OS (`im.elf → libIMDB → libupdaterufp → crypter`) and
+  checks CRC32 only. The FDAT's 256-byte trailer is never read by that path, so
+  modified updates are **plausibly installable but unproven**; the trailer and
+  the loader/ROM remain unexplained. See
+  [`docs/install-path.md`](docs/install-path.md).
 
 Full detail: [`docs/open-gate-analysis.md`](docs/open-gate-analysis.md),
 [`docs/install-path.md`](docs/install-path.md) and
@@ -107,8 +108,9 @@ If you can answer one of these with reproducible evidence, open an issue or PR.
 
 ## Safety
 
-- Do **not** flash a modified FDAT. Signature checks are expected to reject it,
-  and there is no verified recovery path.
+- Do **not** flash a modified FDAT. The update path has no visible signature
+  check, but the 256-byte trailer is unexplained and there is no verified
+  recovery path. Treat acceptance as unproven.
 - Do not write unknown PTP properties or invoke backup/restore, registration or
   power-control commands on a camera you cannot afford to lose.
 - Charge the battery before any camera-side testing. The unit used here was at
