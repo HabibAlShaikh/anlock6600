@@ -11,6 +11,12 @@ Firmware version string: `38114_02.2020071501` (`out/rootfs/version.txt`).
 
 All offsets are **file offsets** into the named file, not virtual addresses.
 
+> **Correction (patch-map pass).** The movie *record* table is at
+> `av-cam.bin 0x87990C` (stride `0x54`, 16 entries), not `0x834B14`; `0x834B14`
+> is the 7×24-byte capture grid. The `0x62A2xx` block compares state vs request
+> and aborts, it is not a pixel ceiling. Aspect has no 3:2 enum value. See
+> [`patch-map.md`](patch-map.md) for the candidate slot and open items.
+
 ---
 
 ## 1. Component inventory
