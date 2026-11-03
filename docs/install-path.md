@@ -46,17 +46,38 @@ plain FAT image. Everything that protects them sits in the FDAT wrapper.
 | Layer | Protection | Who checks | Evidence |
 |---|---|---|---|
 | DAT chunks | CRC32 (`DEND`) | PC updater / receiver | `fwtool/sony/dat.py`; verified above |
+| PC updater self-check | Authenticode (`WinVerifyTrust`, `CryptQueryObject`, `CertFindCertificateInStore`) | PC, on the `.exe` | PE delay imports; no firmware crypto imports |
 | FDAT header | CRC32 over the header (`FdatHeader.checksum`) | receiver | `fwtool/sony/fdat.py:256` |
 | FDAT body | AES-CBC with **fixed, public** keys + 16-byte IV + 256-byte trailer | receiver | `fwtool/sony/constants.py`; trailer layout below |
 | Payload files | per-file CRC32 + size in `*_sum/*.sum` | update body on camera | `uc_crc32sum.elf -c`, `config.xml` |
 | Partition images | none beyond the above | raw write | `us_mkfs.sh`, `loader_writer.sh` |
 | Boot of `/usr`, `/rootfs`, `/system` | no verity/IMA/signature found | kernel/userland | `system/vmlinux.bin` string scan |
 
-Key detail: `fwtool` decrypts Gen4 (`CXD90045`) but **refuses to encrypt**
-(`AesCbcCrypter.encrypt` raises `Encryption not supported`). The reason is the
-trailer: `[ciphertext][16-byte IV][256-byte block]`, which is consistent with an
-RSA-2048 signature over the payload. A 256-byte high-entropy block is not a CRC,
-not an AES IV and not a symmetric MAC.
+Key detail: `fwtool` decrypts Gen4 (`CXD90045`) but does not implement encryption
+(`AesCbcCrypter.encrypt` raises `Encryption not supported`). That is consistent
+with a trailer that cannot be reproduced: `[ciphertext][16-byte IV][256-byte
+block]`. The 256-byte block is high-entropy and non-zero, i.e. not a CRC, not an
+AES IV and not a symmetric MAC; an RSA-2048 signature (or an RSA-wrapped key) is
+the natural reading. This is an inference, not a decoded structure.
+
+### 2.1 The PC side does not verify the firmware
+
+`Update_ILCE6600V110.exe` is a 5-section PE32 whose imports contain **no** RSA,
+SHA or firmware-verification API. The only trust API is Authenticode, and it is
+delay-imported for the executable itself:
+
+```
+CRYPT32.dll: CertCloseStore, CertFindCertificateInStore,
+             CertFreeCertificateContext, CertGetNameStringW, CryptMsgClose,
+             CryptMsgGetParam, CryptQueryObject, WinVerifyTrust
+```
+
+Observed: the PC tool carries no firmware signature check. Inference: the
+camera is the only gate. Consequence: a custom UFP sender (or a patched exe with
+its self-check removed) could deliver a modified DAT; the obstacle is camera-side
+verification, not the host tool. Note that replacing the embedded DAT also
+invalidates the exe's own Authenticode hash, so the stock exe would refuse to run
+unless that self-check is patched out.
 
 ## 3. Where the verifier is not
 
@@ -79,11 +100,17 @@ The camera-side updater code reachable in this payload is also decrypt-only:
 None of them imports `RSA_verify`, `EVP_DigestVerify`, `SHA256_*` or any other
 signature primitive. `libcrypto.so` on the camera is the normal TLS stack.
 
+`uc_mkfs.elf` does not touch the updater partition: before formatting a vfat
+entry it skips `/dev/nflasha1` and `/dev/nflasha13` unconditionally, and formats
+`/dev/nflasha2` only in the `full` pass (`app` mode leaves `/setting` alone).
+The updater partition is therefore neither supplied nor reformatted by this
+payload. (Predicate at `0x8820`, `full`/`app` passes at `0x8984`/`0x8990`.)
+
 **Inference:** if the 256-byte trailer is enforced, the verifier lives outside
 this update payload — most likely in the persistent updater partition
-`/dev/nflasha1` ("SYSTEM (Updater)", 8 MB vfat, `mount.conf`), which this update
-does not rewrite, or in boot ROM. That partition is not in the extracted tree
-because Sony does not ship it in `firmware.dat`.
+`/dev/nflasha1` ("SYSTEM (Updater)", 8 MB vfat, `mount.conf`), or in boot ROM.
+That partition is not in the extracted tree because Sony does not ship it in
+`firmware.dat`.
 
 ## 4. Boot-time verification of the partitions we would patch
 
@@ -92,10 +119,10 @@ raw) or `/system` (`nflasha3`, vfat) is verified at boot:
 
 - `vmlinux.bin` has no `dm-verity`, `IMA`, module-signature or secure-boot
   strings; the custom `ssboot/image.c` code only loads images.
-- `/setting` (`nflasha2`, writable vfat) is read at boot by `rootfs/sbin/init`:
-  it consumes `/setting/env.txt` and `/setting/mode/dmode`, and
-  `usr/bin/change_mode.sh` writes `/setting/mode/preload` for an
-  `LD_PRELOAD`-style library.
+- `/setting` (`nflasha2`, writable vfat) is referenced at boot by
+  `rootfs/sbin/init` (`/setting/env.txt`, `/setting/mode/dmode`), and
+  `usr/bin/change_mode.sh` writes `/setting/mode/preload`, intended to select an
+  `LD_PRELOAD`-style library. Enablement is not verified.
 - `rootfs/sbin/init` contains a `launch_shell()` path for
   `/usr/bin/launch_shell.elf`, which opens `/dev/ttycons` or `/dev/console` and
   execs `/bin/ash`; the kernel command line uses `console=ttyAM0`. A UART shell
@@ -110,8 +137,8 @@ could still exist in the loader or in `nflasha1`.
 
 | Path | Status | What would settle it |
 |---|---|---|
-| A. Modified official update | **Blocked (likely)** by the 256-byte FDAT trailer. Re-encryption is implementable (AES-CBC, public keys) but the trailer cannot be regenerated without Sony's private key. | Dump `nflasha1`, find the FDAT verifier, confirm whether the trailer is checked. If it is not, A becomes viable. |
-| B. Runtime shell / write to `/usr`, `/rootfs` or `/setting` | **Unknown, plausible.** `init` starts `launch_shell.elf` on `ttyAM0` and reads `/setting/env.txt`; `/usr` is mounted from ext2/cramfs/vfat. | Locate UART pads, confirm the shell is enabled, check whether `/usr` is mounted rw. A shell would allow a reversible runtime patch without touching the signed update path. |
+| A. Modified official update | **Blocked (likely)** by the 256-byte FDAT trailer. Re-encryption is implementable (AES-CBC, public keys) but the trailer cannot be regenerated without Sony's private key. The PC tool itself does not verify the firmware. | Dump `nflasha1`, find the FDAT verifier, confirm whether the trailer is checked. If it is not, A becomes viable with a custom sender. |
+| B. Runtime shell / write to `/usr`, `/rootfs` or `/setting` | **Unknown, plausible.** `init` contains a `launch_shell()` path on `ttyAM0` and references `/setting/env.txt`; `/usr` is mounted from ext2/cramfs/vfat. | Locate UART pads, confirm the shell is enabled, check whether `/usr` is mounted rw. A shell would allow a reversible runtime patch without touching the signed update path. |
 | C. Hardware NAND write | **Unknown, high risk.** Requires a full dump and a loader that does not verify. | Identify the NAND part, dump all partitions, compare the loader against `nflasha1`. |
 | D. Network exploit (`orb-server`, web API) | **Out of scope.** A separate vulnerability project with poor reliability. | Only with a tested restore path. |
 
@@ -130,7 +157,8 @@ files we can extract.
 Do not patch and flash on this evidence. The next concrete step is a read-only
 dump of `nflasha1` (and the loader area `nflashaB0`) to locate the FDAT verifier,
 followed by the runtime-access investigation (path B). Both are prerequisites for
-any write.
+any write. The PC-side question is closed: the updater tool does not check the
+firmware.
 
 First actions, in order:
 

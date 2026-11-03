@@ -5,6 +5,9 @@ Reads the raw DAT (magic \\x89UFU\\r\\n\\x1a\\n) embedded in the .exe, verifies 
 CRC32, lists the chunks, and splits the encrypted FDAT into
 ciphertext + 16-byte IV + 256-byte trailer. No Sony keys needed.
 
+The 0x110 split is the Gen4 (CXD90045) layout; other generations need a different
+trailer size.
+
 Usage: python3 inspect_updater.py Update_ILCE6600V110.exe
 """
 

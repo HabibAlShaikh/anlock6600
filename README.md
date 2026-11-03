@@ -28,7 +28,8 @@ contain Sony firmware or decrypted firmware images; see [Reproduce](#reproduce).
 - The a6600 has an **8-bit 4:2:0 AVC** encoder and no HEVC encoder assets.
 - Modified update packages are blocked by the **Gen4 FDAT wrapper**: public
   symmetric keys decrypt the payload, but the 256-byte trailer that follows the
-  ciphertext cannot be regenerated. See
+  ciphertext cannot be regenerated. The PC updater itself does not verify the
+  firmware; the camera is the gate. See
   [`docs/install-path.md`](docs/install-path.md) for what is verified, where the
   verifier must live, and the remaining runtime options.
 
