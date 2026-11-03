@@ -26,10 +26,14 @@ contain Sony firmware or decrypted firmware images; see [Reproduce](#reproduce).
   sizes, is 4K-capable, and 1920×1280 is well inside its limits. The blockers are
   the mode tables, LiroSeq validators, UI, sensor readout mode and SPS metadata.
 - The a6600 has an **8-bit 4:2:0 AVC** encoder and no HEVC encoder assets.
-- Modified update packages are blocked by **Gen4 signature verification**; the
-  public symmetric keys decrypt but do not sign.
+- Modified update packages are blocked by the **Gen4 FDAT wrapper**: public
+  symmetric keys decrypt the payload, but the 256-byte trailer that follows the
+  ciphertext cannot be regenerated. See
+  [`docs/install-path.md`](docs/install-path.md) for what is verified, where the
+  verifier must live, and the remaining runtime options.
 
-Full detail: [`docs/open-gate-analysis.md`](docs/open-gate-analysis.md) and
+Full detail: [`docs/open-gate-analysis.md`](docs/open-gate-analysis.md),
+[`docs/install-path.md`](docs/install-path.md) and
 [`docs/a6600-vs-a6700.md`](docs/a6600-vs-a6700.md).
 
 ## Repo layout
@@ -37,10 +41,11 @@ Full detail: [`docs/open-gate-analysis.md`](docs/open-gate-analysis.md) and
 | Path | Contents |
 |---|---|
 | `docs/open-gate-analysis.md` | Open-gate / 3:2 feasibility: components, dimension tables, validators, verdict |
+| `docs/install-path.md` | G0: what the update and boot chain verify, where the FDAT verifier must live, install options |
 | `docs/a6600-vs-a6700.md` | a6600 vs a6700 platform comparison and feature-limit analysis |
 | `research/manifests/a6600-files.txt` | File listing of the decrypted firmware package |
 | `research/data/` | Dimension scan output, updater strings, annotated hex dump |
-| `research/scripts/` | Small analysis helpers (dimension scan, xrefs, av-cam ELF reconstruction) |
+| `research/scripts/` | Small analysis helpers (container layout, dimension scan, xrefs, av-cam ELF reconstruction) |
 | `scripts/extract_a6600.py` | Official updater → decrypted FDAT → firmware tree, rootfs, `/usr`, system files |
 | `manifests/sha256.txt` | SHA-256 of key generated artifacts (input hashes are comments) |
 
