@@ -1,8 +1,9 @@
 import os, sys, struct
 src = sys.argv[1] if len(sys.argv) > 1 else 'out/system/av-cam.bin'
 dst = sys.argv[2] if len(sys.argv) > 2 else 'out/avcam.elf'
+VA = int(sys.argv[3], 0) if len(sys.argv) > 3 else 0
 d=open(src,'rb').read()
-VA=0; size=len(d)
+size=len(d)
 shstr=b'\0.text\0.shstrtab\0'
 ehsize=52; phentsize=32; phnum=1; shentsize=40; shnum=3
 phoff=ehsize; shoff=phoff+phentsize*phnum

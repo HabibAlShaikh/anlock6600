@@ -9,7 +9,8 @@ Paths are optional arguments; defaults point into `out/`.
 | `inspect_updater.py` | `inspect_updater.py Update.exe` | Print DAT chunk layout, verify DAT CRC32, split the FDAT ciphertext/IV/trailer |
 | `fdat_roundtrip.py` | `fdat_roundtrip.py Update.exe OUTDIR` | Decrypt/re-encrypt the FDAT and prove a byte-identical DAT rebuild (needs fwtool + pycryptodomex) |
 | `recon_avcam.py` | `recon_avcam.py [av-cam.bin]` | Summarise the image (size, header, high-word histogram) |
-| `mkelf.py` | `mkelf.py [av-cam.bin] [avcam.elf]` | Wrap the raw ARM image in a minimal ELF for a disassembler |
+| `mkelf.py` | `mkelf.py [av-cam.bin] [avcam.elf] [vaddr]` | Wrap the raw ARM image (or another blob) in a minimal ELF for a disassembler |
+| `xref_thumb.py` | `xref_thumb.py FILE LO HI` | Find Thumb PC-relative xrefs into an address range (absolute and `add rX,pc` idioms) |
 | `xref_pic2.py` | `xref_pic2.py [av-cam.bin] [picrefs2.json]` | Find references to picture-size constants |
 | `find_strtab.py` | `find_strtab.py [av-cam.bin]` | Locate LiroSeq string tables and their entries |
 | `find_selfrel.py` | `find_selfrel.py [av-cam.bin]` | Find self-relative pointers to known strings |
