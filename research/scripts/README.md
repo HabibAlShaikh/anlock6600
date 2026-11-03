@@ -7,6 +7,7 @@ Paths are optional arguments; defaults point into `out/`.
 |---|---|---|
 | `scan_dims.py` | `scan_dims.py DIR...` | Scan files for width/height-like u32 pairs and dump candidates |
 | `inspect_updater.py` | `inspect_updater.py Update.exe` | Print DAT chunk layout, verify DAT CRC32, split the FDAT ciphertext/IV/trailer |
+| `fdat_roundtrip.py` | `fdat_roundtrip.py Update.exe OUTDIR` | Decrypt/re-encrypt the FDAT and prove a byte-identical DAT rebuild (needs fwtool + pycryptodomex) |
 | `recon_avcam.py` | `recon_avcam.py [av-cam.bin]` | Summarise the image (size, header, high-word histogram) |
 | `mkelf.py` | `mkelf.py [av-cam.bin] [avcam.elf]` | Wrap the raw ARM image in a minimal ELF for a disassembler |
 | `xref_pic2.py` | `xref_pic2.py [av-cam.bin] [picrefs2.json]` | Find references to picture-size constants |

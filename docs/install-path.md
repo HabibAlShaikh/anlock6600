@@ -50,8 +50,8 @@ plain FAT image.
 | PC updater self-check | Authenticode on the `.exe` only; no firmware crypto | PE delay imports `WinVerifyTrust`, `CryptQueryObject`, … |
 | DAT container | CRC32 (`DEND`) | `crypter.elf` `CrcChecker` 0xadfc/0xae60; verified |
 | UFP receive | none; writes `/tmp_updater/Firm.dat` | `libupdaterufp.so` 0x1622–0x1660 |
-| FDAT wrapper | AES with a hard-coded key; no signature path found | `libupdatertalk.so` `Dec_Scramble`; no RSA/EVP imports |
-| FDAT trailer | **never read** by any extractable update code | see §3 |
+| FDAT wrapper | AES with a hard-coded key; container rebuildable byte-for-byte (round-trip proven) | `libupdatertalk.so` `Dec_Scramble`; `research/scripts/fdat_roundtrip.py` |
+| FDAT trailer | **never read** by any extractable update code; copied verbatim on rebuild | see §3.1 |
 | Update body | CRC32 sums driven by its own `config.xml` | `libupdaterbody.so` `GetBody` 0xfa85 |
 | Partition images | none beyond the above | `us_mkfs.sh`, `loader_writer.sh` |
 | Boot of `/usr`, `/rootfs`, `/system` | no verity/IMA/signature found | `vmlinux.bin` string scan |
@@ -88,6 +88,25 @@ Consequences:
 - `crypter.elf` mounts `/dev/nflasha2` and then `/dev/nflasha1` only to read
   `dat2` (model), `dat3` (region) and `updater/dat4` (version) at `0xd6d4`/
   `0xd750`. They are not a verifier.
+
+## 3.1 The container is rebuildable offline
+
+`research/scripts/fdat_roundtrip.py` decrypts the FDAT, re-encrypts the same
+plaintext, rebuilds the DAT, and matches the official file **byte-for-byte**
+(316,672,424 bytes, DEND CRC `0x157d2ed5`). Confirmed framing:
+
+- 309,250 blocks × 1024 bytes; each block starts with `u16le checksum` +
+  `u16le (size | 0x8000 end flag)` + payload + `0xff` padding.
+- Checksum = sum of the 511 little-endian u16 words of bytes 2..1023.
+- First block: first 512 bytes AES-**ECB** with `key_aes`, remaining 512 AES-CBC
+  with `key_cxd90045` chained from the stored IV; later blocks are full CBC and
+  the chain carries across blocks.
+- IV sits at `len - 0x110`; the 256-byte trailer follows it and is copied
+  verbatim.
+
+This means the encryption layer is solved. It does **not** prove that a modified
+container is accepted: if the 256-byte trailer signs the plaintext, changing a
+payload byte invalidates it even though no visible code checks it.
 
 ## 4. The 256-byte trailer
 
@@ -134,16 +153,14 @@ verification blocks modified updates" is **overstated**: no verifier exists in
 the entire extractable update path, and the trailer is never read by it. What
 remains is one unexplained 256-byte block and an uninspectable loader/ROM.
 
-The install path is therefore **plausibly open but unproven**. The blockers are
-now engineering plus one unknown:
+The install path is therefore **plausibly open but unproven**. The remaining
+work is delivery plus one unknown:
 
-1. Rebuild the DAT/FDAT: match the exact AES framing (fwtool decrypts Gen4 as
-   CBC; `libupdatertalk` exposes an ECB primitive — the two must be reconciled),
-   recompute the DAT `DEND` CRC, and decide what to do with the trailer.
-2. Recompute every `*_sum/*.sum` CRC32 after changing a payload file.
-3. Deliver it: a custom UFP sender, or the stock exe with its Authenticode
+1. ~~Rebuild the DAT/FDAT~~ — **done offline** (`fdat_roundtrip.py`, byte-identical,
+   §3.1). Recompute every `*_sum/*.sum` CRC32 after changing a payload file.
+2. Deliver it: a custom UFP sender, or the stock exe with its Authenticode
    self-check removed.
-4. Prove acceptance on a sacrificial unit with a **byte-identical repack** first
+3. Prove acceptance on a sacrificial unit with a **byte-identical repack** first
    (same firmware, recomputed container). An accepted repack proves the trailer
    is not enforced without changing camera functionality; a rejected one should
    abort before any write.
@@ -153,8 +170,8 @@ separate, explicitly approved action.
 
 ## 7. Preconditions before the first write
 
-1. Offline repack tool with a decrypt→encrypt round-trip that reproduces the
-   original container byte-for-byte (or documents exactly where it cannot).
+1. ~~Offline repack tool with a decrypt→encrypt round-trip~~ — **done**, matches
+   the original container byte-for-byte.
 2. A full dump of `nflasha1`, `nflasha2`, `nflasha3`, `nflasha5`, `nflasha7`,
    `nflasha15`, `nflashaB0`, with hashes.
 3. A **tested** restore of that dump to the same unit.
@@ -177,8 +194,7 @@ separate, explicitly approved action.
 ## 9. Open questions
 
 - Is the trailer checked by the loader/ROM, or is it vestigial?
-- What is the exact AES mode/framing the camera expects (CBC vs ECB, block
-  checksums, IV placement)?
 - Can the stock `.exe` be used after defeating its Authenticode self-check, or is
   a UFP protocol reimplementation required?
-- Does an interrupted update leave a recoverable state?
+- Does an interrupted update leave a recoverable state? (The update writes
+  partitions in place; no atomic A/B slot was found.)
