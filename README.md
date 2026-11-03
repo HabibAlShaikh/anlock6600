@@ -1,0 +1,117 @@
+# Sony a6600 (ILCE-6600) firmware research
+
+Read-only reverse engineering of the Sony **ILCE-6600** firmware, version **1.10**
+(internal build string `38114_02.2020071501`), focused on video capabilities —
+specifically whether an **open-gate (3:2) 1080p** recording mode can be enabled.
+
+**Status: negative so far.** No stock setting, PTP property or service-mode value
+enables a taller-than-16:9 movie frame. Doing it would require patching the
+signed firmware, which the camera rejects.
+
+This repository contains **text, offsets, scripts and hashes only**. It does not
+contain Sony firmware or decrypted firmware images; see [Reproduce](#reproduce).
+
+## What was found
+
+- The movie path is **enum-quantised**: size classes are
+  `PICT_SIZE_VGA / 720 / 1080 / 2160`, and every one of the 39 movie format
+  names uses a height of 270, 360, 480, 720, 1080 or 2160.
+- Movie aspect is limited to **16:9**. The `4:3` and `15:9` IDs in `libObj.so`
+  are AVCHD/pixel-aspect metadata, not selectable recording modes.
+- The only 1440×1080 movie path is **anamorphic 16:9** (displays as 1920×1080).
+- 1920×1280 and 1920×1440 exist **only as still-photo sizes** in generic aspect
+  tables. They never enter `av-cam.bin` or any movie format name.
+- The AVC encoder is **not the limit**: it accepts explicit width/height/canvas
+  sizes, is 4K-capable, and 1920×1280 is well inside its limits. The blockers are
+  the mode tables, LiroSeq validators, UI, sensor readout mode and SPS metadata.
+- The a6600 has an **8-bit 4:2:0 AVC** encoder and no HEVC encoder assets.
+- Modified update packages are blocked by **Gen4 signature verification**; the
+  public symmetric keys decrypt but do not sign.
+
+Full detail: [`docs/open-gate-analysis.md`](docs/open-gate-analysis.md) and
+[`docs/a6600-vs-a6700.md`](docs/a6600-vs-a6700.md).
+
+## Repo layout
+
+| Path | Contents |
+|---|---|
+| `docs/open-gate-analysis.md` | Open-gate / 3:2 feasibility: components, dimension tables, validators, verdict |
+| `docs/a6600-vs-a6700.md` | a6600 vs a6700 platform comparison and feature-limit analysis |
+| `research/manifests/a6600-files.txt` | File listing of the decrypted firmware package |
+| `research/data/` | Dimension scan output, updater strings, annotated hex dump |
+| `research/scripts/` | Small analysis helpers (dimension scan, xrefs, av-cam ELF reconstruction) |
+| `scripts/extract_a6600.py` | Official updater → decrypted FDAT → firmware tree/rootfs/WBI sections |
+| `manifests/sha256.txt` | SHA-256 of the input updater and every generated artifact |
+
+## Reproduce
+
+Requirements: Python 3, `pycryptodomex`, `tar`, `debugfs` (e2fsprogs), `7z`
+(p7zip), and [ma1co/fwtool.py](https://github.com/ma1co/fwtool.py).
+
+```sh
+git clone https://github.com/ma1co/fwtool.py
+export PYTHONPATH="$PWD/fwtool.py"
+
+# Download the official v1.10 updater for your region from Sony support, then:
+python3 scripts/extract_a6600.py Update_ILCE6600V110.exe out
+```
+
+Output:
+
+```
+out/a6600_fdat.bin        decrypted FDAT
+out/a6600_firmware.tar    update payload (config, partitions, lenses)
+out/a6600_updater.img     updater filesystem
+out/firmware/             unpacked payload
+out/rootfs/               ext2 root filesystem (from nflasha15)
+out/system/               FAT image contents: av-cam.bin, vmlinux.bin, initrd.img, ...
+```
+
+Verify the generated files: `cd out && sha256sum -c ../manifests/sha256.txt`.
+The script is pinned to the **v1.10** updater layout (`BASE=0xAE9D4`,
+`SIZE=316672424`); other versions need different offsets.
+
+Requirements: Python 3, `pycryptodomex`, `tar`, `debugfs` (e2fsprogs), and
+`7z` (p7zip) for the FAT system image.
+
+## Open questions — where help is useful
+
+1. **Capability-ID tables.** Movie modes are gated at runtime by `CapIdTblMgr` /
+   `PARAMID_CAP_INFO_*` data in encrypted model partitions. The format and the
+   a6600's enabled list are unknown. A read-only service-mode backup might
+   expose enough to document it.
+2. **Validator mapping.** Fully disassemble the `av-cam.bin` LiroSeq checks
+   (`mov_aspect_req`, `mov_size_req`, `mov_sizeh_req`, `movrec_mode_req`) and
+   confirm how the size enum maps to the image-size tables.
+3. **Sensor readout.** Does the IMX284 support a 3:2 binning mode at video rates
+   (e.g. 2120×1416)? Datasheet, teardown or timing evidence wanted.
+4. **Shared binary comparison.** The a6600 `av-cam.bin` is a multi-model image.
+   Comparing it with other Sony bodies that share the binary could reveal whether
+   a 3:2 movie path exists anywhere and is merely gated.
+5. **`0xd406`.** This PTP string property is the only writable one and is always
+   empty. Its purpose is unknown. Observe it read-only; do not write it blindly.
+
+If you can answer one of these with reproducible evidence, open an issue or PR.
+
+## Safety
+
+- Do **not** flash a modified FDAT. Signature checks are expected to reject it,
+  and there is no verified recovery path.
+- Do not write unknown PTP properties or invoke backup/restore, registration or
+  power-control commands on a camera you cannot afford to lose.
+- Charge the battery before any camera-side testing. The unit used here was at
+  17–19% during inspection.
+- a6700 images and data are included for **comparison only**. Cross-flashing is
+  not possible (different SoC, architecture, layout, IDs and signing) and will
+  brick the camera.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Short version: reproducible scripts,
+file offsets, and evidence. No firmware uploads, no keys, no "just flash this".
+
+## License
+
+Original text and scripts: MIT (see [`LICENSE`](LICENSE)). Sony firmware,
+trademarks and third-party tools remain the property of their owners and are not
+distributed here.

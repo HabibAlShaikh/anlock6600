@@ -1,0 +1,14 @@
+# SHA-256 for a6600 v1.10 research artifacts.
+# Verify generated files from the extraction output directory:
+#     cd out && sha256sum -c ../manifests/sha256.txt
+#
+# Inputs are comments only; they are not distributed in this repo.
+# 67a1d92be9b9d1ea3c483502918edf6423653ecadcf4b0184303b096a601d76f  Update_ILCE6600V110.exe
+# d3c7db5b9b40c89b11ecf03addf0f6ff1d9b917acf9f55e46360462e86db847c  BODYDATA.DAT (a6700 comparison, not a flash target)
+
+82f97f3bd652cb7d595c8c58ef1d472d7ab2b23eaf201e875dfbb3fb6b340102  a6600_fdat.bin
+70ff318d89dda45c14e979a3c8a14b8b20b4bda2b573bc39e35a2701ff20b6b5  a6600_firmware.tar
+5abbc90976dd9fef6962af743bf414e287def2f039b9fecd4236495a628baa74  a6600_updater.img
+c17bdd14bb3f51ab14b6ffcd385b81786c4201ab5a0d2bea8a2c7be5c6aed8b5  system/av-cam.bin
+0df851b67f6302ecd3859e29182b1081605da5bfa5fb418fa9f6d8924172a451  system/vmlinux.bin
+cba24946cafa515e7cdad01dc9255d9c6e4892539bec40396e210f8238bb4c50  system/initrd.img

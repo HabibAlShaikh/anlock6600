@@ -1,0 +1,33 @@
+# Firmware inputs and generated images — never commit
+*.exe
+*.EXE
+*.DAT
+*.bin
+*.img
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.zip
+*.elf
+*.dis
+
+# Extraction outputs
+out/
+a6600_rootfs/
+a6600_root/
+a6600_usr/
+a6600_system/
+a6700_rootfs/
+a6700_root/
+a6700_usr/
+a6700_system/
+a6700_cp/
+
+# Local artifacts
+/a6600-vs-a6700.md
+.~lock.*
+~$*
+.DS_Store
+__pycache__/
+*.pyc
