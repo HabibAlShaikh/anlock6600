@@ -1,5 +1,6 @@
-import struct, collections
-d=open('a6600_system/av-cam.bin','rb').read()
+import sys, struct, collections
+src = sys.argv[1] if len(sys.argv) > 1 else 'out/system/av-cam.bin'
+d=open(src,'rb').read()
 n=len(d)
 print('size',hex(n),n)
 print('head',d[:64].hex())

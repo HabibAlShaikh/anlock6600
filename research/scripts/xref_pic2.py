@@ -1,5 +1,7 @@
-import json, collections
-d=open('a6600_system/av-cam.bin','rb').read(); n=len(d)
+import os, sys, json, collections
+src = sys.argv[1] if len(sys.argv) > 1 else 'out/system/av-cam.bin'
+dst = sys.argv[2] if len(sys.argv) > 2 else 'out/picrefs2.json'
+d=open(src,'rb').read(); n=len(d)
 def u32(o): return int.from_bytes(d[o:o+4],'little')
 def u16(o): return int.from_bytes(d[o:o+2],'little')
 def addpc(rt): return 0x4400|(0xF<<3)|rt
@@ -18,7 +20,8 @@ while i<n-8:
                 refs[u32(pool)+i+k+4].append(i); break
     i+=2
 print('refs',sum(len(v) for v in refs.values()),'targets',len(refs))
-json.dump({str(k):v for k,v in refs.items()},open('open_gate/picrefs2.json','w'))
+os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
+json.dump({str(k):v for k,v in refs.items()},open(dst,'w'))
 T={'invalid_record_size':0x9694eb,'invalid_aspect_d':0x9691fc,'invalid_aspect':0x9692e8,
    'h_dest':0x96935c,'dest2':0x96934a,'paramcheckerr':0x9694e2,
    'size_tbl':0x834b14,'fmt_tbl':0x9050e5,'fmt_1440':0x905396}

@@ -24,8 +24,10 @@ a6700_usr/
 a6700_system/
 a6700_cp/
 
-# Local artifacts
+# Local artifacts and third-party checkouts
 /a6600-vs-a6700.md
+/fwtool.py/
+/.venv/
 .~lock.*
 ~$*
 .DS_Store

@@ -1,5 +1,6 @@
-import struct
-d=open('a6600_system/av-cam.bin','rb').read()
+import sys, struct
+src = sys.argv[1] if len(sys.argv) > 1 else 'out/system/av-cam.bin'
+d=open(src,'rb').read()
 n=len(d)
 targets={
  'mov_aspect_req':0x9d6fec,

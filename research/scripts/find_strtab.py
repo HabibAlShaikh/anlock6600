@@ -1,10 +1,14 @@
-import struct,re,collections
-d=open('a6600_system/av-cam.bin','rb').read(); n=len(d)
+import sys, struct,re,collections
+src = sys.argv[1] if len(sys.argv) > 1 else 'out/system/av-cam.bin'
+d=open(src,'rb').read(); n=len(d)
 strs=[]
 for m in re.finditer(rb'FW: LiroSeq ParamCheckErr@%s\[([a-z0-9_]+)\]', d):
     strs.append((m.start(), m.group(1).decode()))
 print('paramcheckerr-style strings',len(strs))
 for s,name in strs[:60]: print(' ',hex(s),name)
+if not strs:
+    sys.exit('no LiroSeq param-check strings found')
+
 # build value sets
 u32s=set(); u16s=set()
 for o in range(0,n-4,2):

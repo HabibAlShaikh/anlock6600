@@ -1,12 +1,11 @@
-import struct
-src='a6600_system/av-cam.bin'
+import os, sys, struct
+src = sys.argv[1] if len(sys.argv) > 1 else 'out/system/av-cam.bin'
+dst = sys.argv[2] if len(sys.argv) > 2 else 'out/avcam.elf'
 d=open(src,'rb').read()
 VA=0; size=len(d)
 shstr=b'\0.text\0.shstrtab\0'
 ehsize=52; phentsize=32; phnum=1; shentsize=40; shnum=3
 phoff=ehsize; shoff=phoff+phentsize*phnum
-data_off=(shoff+shentsize*shnum+len(shstr)+0xfff)&~0xfff
-str_off=data_off-size and 0
 # layout: [eh|ph|sh|shstrtab pad] data
 strtab_off=shoff+shentsize*shnum
 data_off=(strtab_off+len(shstr)+15)&~0xf
@@ -18,5 +17,6 @@ struct.pack_into('<IIIIIIIIII',out,shoff+shentsize,1,1,6,0,data_off,size,0,0,4,0
 struct.pack_into('<IIIIIIIIII',out,shoff+2*shentsize,7,3,0,0,strtab_off,len(shstr),0,0,1,0)
 out[strtab_off:strtab_off+len(shstr)]=shstr
 out[data_off:data_off+size]=d
-open('open_gate/avcam.elf','wb').write(bytes(out))
-print('ok',hex(len(out)))
+os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
+open(dst,'wb').write(bytes(out))
+print('ok',dst,hex(len(out)))

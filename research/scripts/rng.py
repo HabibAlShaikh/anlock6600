@@ -1,7 +1,11 @@
-import sys,re
+import os, sys, re
 lo=int(sys.argv[1],16); hi=int(sys.argv[2],16)
+path = sys.argv[3] if len(sys.argv) > 3 else 'out/avcam.dis'
+if not os.path.exists(path):
+    sys.exit(f'missing {path}; generate it with: '
+             'llvm-objdump --triple=thumbv7-linux-gnueabihf -d out/avcam.elf > out/avcam.dis')
 pat=re.compile(r'^\s*([0-9a-f]+):')
-for line in open('open_gate/avcam.dis'):
+for line in open(path):
     m=pat.match(line)
     if not m: continue
     a=int(m.group(1),16)

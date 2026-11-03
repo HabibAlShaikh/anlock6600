@@ -2,11 +2,12 @@
 
 Static analysis of the decrypted/extracted firmware. No hardware touched.
 
-> Paths below (`/tmp/opencode/...`) are the original local extraction layout.
-> In this repo, reproduce them with `scripts/extract_a6600.py <updater.exe> out`
-> and read `out/` in place of `/tmp/opencode/`; `a6600_system/*` corresponds to
-> `out/system/*` (from the nflasha3 FAT image).
-Firmware version string: `38114_02.2020071501` (`/tmp/opencode/a6600_rootfs/version.txt`).
+> Paths below use the layout produced by `scripts/extract_a6600.py <updater.exe> out`:
+> `out/rootfs/` is the root filesystem (nflasha7), `out/usr/` is the `/usr`
+> partition (nflasha15) and `out/system/` holds `av-cam.bin`, `vmlinux.bin` and
+> the other camera images (nflasha3 FAT). Helpers are in `research/scripts/`,
+> data outputs in `research/data/`.
+Firmware version string: `38114_02.2020071501` (`out/rootfs/version.txt`).
 
 All offsets are **file offsets** into the named file, not virtual addresses.
 
@@ -16,23 +17,23 @@ All offsets are **file offsets** into the named file, not virtual addresses.
 
 | Path | Size | Role (evidence) |
 |---|---|---|
-| `/tmp/opencode/a6600_system/av-cam.bin` | 16,825,940 | Main camera/AV control firmware: imager driver (`IMX284`), ADF/AVIO pipeline, `LiroSeq` parameter checks, `[CODEC V]` open/start params, AVC/HEVC/AVCHD/JPEG control, `CapIdTblMgr`. Raw ARM image (header `0a 00 00 ea 4f 52 49 4c` = `b` + `"ORIL"`). |
-| `/tmp/opencode/a6600_usr/bin/orb-server` | 5,976,888 | ARM ELF, network/remote-control server. Only XAVC/AVCHD name strings, no geometry. |
-| `/tmp/opencode/a6600_usr/lib/libObj.so` | 20,889,004 | UI object layer. Holds `VALUEID_MOVIE_ASP_*`, `V_PICT_SIZE_*`, `PARAMID_MOVIE_*`, `PARAMID_CAP_INFO_*`, `ModelIdTable`. |
-| `/tmp/opencode/a6600_usr/lib/libmpr.so` | 12,741,872 | MPR media layer: `PICT_SIZE_*`, `MOVIE_FORMAT_TYPE_*`, `XavcMRecFltMgr`, `AviMMgr`, `VPictSize`, pixel-aspect/AVCHD metadata. |
-| `/tmp/opencode/a6600_usr/lib/libmprctrl.so` | — | Image-size tables grouped by aspect (see §2). |
-| `/tmp/opencode/a6600_usr/lib/viewUnified2.so` | 11,553,828 | Generic resolution table (same shape as libmprctrl). |
-| `/tmp/opencode/a6600_usr/lib/libInfraMediaCommon.so` | — | Contains one 1920x1280 u32 pair (generic media table). |
-| `/tmp/opencode/a6600_usr/lib/libSysDef.so` | 1,516,736 | `DefInh`/`DefRsrc`/`MwfTbl` tables (`CATEID_APP_MODELS`), no dimensions. |
-| `/tmp/opencode/a6600_usr/codec/vcd_firmware.bin` | 5,445,340 | Video codec DSP firmware (C++ style asserts only). |
-| `/tmp/opencode/a6600_usr/codec/bnl_firmware.bin`, `bnl_ipl.bin`, `bni_*` | 1.4 MB / … | “Beaune” codec DSP boot/firmware (`codec_drv.ko` loads them from `/usr/beaune/`). |
-| `/tmp/opencode/a6600_usr/sabin/sa_avce_*_zma.bin` | 227–231 KB | AVC **encoder** DSP tasks (quality / performance / performance+). |
-| `/tmp/opencode/a6600_usr/sabin/sa_avcd_*_zma.bin` | 68–87 KB | AVC **decoder** DSP tasks. |
-| `/tmp/opencode/a6600_usr/sabin/dcv_psf_table_movie*.bin` | 10–18 KB | **Not** geometry: PSF (point-spread / shading) correction tables. Headers say `IMX210` (`movie`, `movie_4k`) and `IMX094` (`movie_bayer`) — legacy shared files, not the a6600 sensor. |
-| `/tmp/opencode/a6600_usr/kmod/codec_drv.ko` | 18,372 | PCIe “Beaune” codec driver (`pci:v0000104Dd00009093`), no dimension constants. |
-| `/tmp/opencode/a6600_system/bonobo.bin` | 172,144 | ISP (“Bonobo”) firmware, no human-readable geometry. |
-| `/tmp/opencode/a6600_usr/scenario/CAMERA_SCN_MOVIE_REC_START.so` | 7,048 | Scenario glue, no sizes. |
-| `/tmp/opencode/a6600_updater.img` | 143,360 | Updater only: `bksb.elf`, `chkfirm.sh`, `pformat.elf`, `libupdaterbody.so`, … — **no** movie/encoder module (full string list in `open_gate/updater_strings.txt`, 1694 lines). |
+| `out/system/av-cam.bin` | 16,825,940 | Main camera/AV control firmware: imager driver (`IMX284`), ADF/AVIO pipeline, `LiroSeq` parameter checks, `[CODEC V]` open/start params, AVC/HEVC/AVCHD/JPEG control, `CapIdTblMgr`. Raw ARM image (header `0a 00 00 ea 4f 52 49 4c` = `b` + `"ORIL"`). |
+| `out/usr/bin/orb-server` | 5,976,888 | ARM ELF, network/remote-control server. Only XAVC/AVCHD name strings, no geometry. |
+| `out/usr/lib/libObj.so` | 20,889,004 | UI object layer. Holds `VALUEID_MOVIE_ASP_*`, `V_PICT_SIZE_*`, `PARAMID_MOVIE_*`, `PARAMID_CAP_INFO_*`, `ModelIdTable`. |
+| `out/usr/lib/libmpr.so` | 12,741,872 | MPR media layer: `PICT_SIZE_*`, `MOVIE_FORMAT_TYPE_*`, `XavcMRecFltMgr`, `AviMMgr`, `VPictSize`, pixel-aspect/AVCHD metadata. |
+| `out/usr/lib/libmprctrl.so` | — | Image-size tables grouped by aspect (see §2). |
+| `out/usr/lib/viewUnified2.so` | 11,553,828 | Generic resolution table (same shape as libmprctrl). |
+| `out/usr/lib/libInfraMediaCommon.so` | — | Contains one 1920x1280 u32 pair (generic media table). |
+| `out/usr/lib/libSysDef.so` | 1,516,736 | `DefInh`/`DefRsrc`/`MwfTbl` tables (`CATEID_APP_MODELS`), no dimensions. |
+| `out/usr/codec/vcd_firmware.bin` | 5,445,340 | Video codec DSP firmware (C++ style asserts only). |
+| `out/usr/codec/bnl_firmware.bin`, `bnl_ipl.bin`, `bni_*` | 1.4 MB / … | “Beaune” codec DSP boot/firmware (`codec_drv.ko` loads them from `/usr/beaune/`). |
+| `out/usr/sabin/sa_avce_*_zma.bin` | 227–231 KB | AVC **encoder** DSP tasks (quality / performance / performance+). |
+| `out/usr/sabin/sa_avcd_*_zma.bin` | 68–87 KB | AVC **decoder** DSP tasks. |
+| `out/usr/sabin/dcv_psf_table_movie*.bin` | 10–18 KB | **Not** geometry: PSF (point-spread / shading) correction tables. Headers say `IMX210` (`movie`, `movie_4k`) and `IMX094` (`movie_bayer`) — legacy shared files, not the a6600 sensor. |
+| `out/usr/kmod/codec_drv.ko` | 18,372 | PCIe “Beaune” codec driver (`pci:v0000104Dd00009093`), no dimension constants. |
+| `out/system/bonobo.bin` | 172,144 | ISP (“Bonobo”) firmware, no human-readable geometry. |
+| `out/usr/scenario/CAMERA_SCN_MOVIE_REC_START.so` | 7,048 | Scenario glue, no sizes. |
+| `out/a6600_updater.img` | 143,360 | Updater only: `bksb.elf`, `chkfirm.sh`, `pformat.elf`, `libupdaterbody.so`, … — **no** movie/encoder module (full string list in `research/data/updater_strings.txt`, 1694 lines). |
 
 ---
 
@@ -40,7 +41,7 @@ All offsets are **file offsets** into the named file, not virtual addresses.
 
 ### 2.1 `av-cam.bin` 0x834B14 — image-size table (7 entries × 24 bytes, repeated 3×)
 
-Hexdump (`open_gate/hex_avcam_834b10.txt`):
+Hexdump (`research/data/hex_avcam_834b10.txt`):
 
 ```
 00834b10: 0100 0000 8002 0000 e001 0000 8002 0000   <- 0x1, 640, 480, 640
@@ -238,7 +239,7 @@ That is a cross-cutting feature addition, not a flag flip. Doing it without Sony
 
 ## 9. Negative results (searched, not found)
 
-* `open gate`, `OpenGate`, `OPENGATE`, `open-gate` — 0 hits in `a6600_rootfs`, `a6600_usr`, `a6600_system`, `a6600_root`, `a6600_fdat.bin`, and the a6700 trees.
+* `open gate`, `OpenGate`, `OPENGATE`, `open-gate` — 0 hits in `out/rootfs`, `out/usr`, `out/system`, `out/firmware`, `a6600_fdat.bin`, and the a6700 trees.
 * `1920x1280` / `1920x1440` in `av-cam.bin` — 0 hits (u16 and u32 adjacent pairs).
 * Any movie picture-size enum besides VGA / WVGA / 720 / 1080 / 2160 — none.
 * Any movie aspect enum value `3:2` — none (still-image `3:2` exists: `VALUEID_STILL_ASP_3_2`, `VALUEID_EXPAND_FOCUS_ASP_3_2`, `STILL_FORMAT_ASPECT_3_2`).
@@ -253,17 +254,25 @@ That is a cross-cutting feature addition, not a flag flip. Doing it without Sony
 
 ### Artifacts produced
 
-* `/tmp/opencode/open_gate/a6600_open_gate_findings.md` (this file)
-* `/tmp/opencode/open_gate/scan_dims.py` — u16/u32 adjacent dimension-pair scanner
-* `/tmp/opencode/open_gate/dims_a6600.tsv` — 1408 dimension-pair hits with file/offset
-* `/tmp/opencode/open_gate/hex_avcam_834b10.txt` — hexdump of the capture-size table
-* `/tmp/opencode/open_gate/updater_strings.txt` — all strings from the updater image
+Shipped in this repo:
+
+* `docs/open-gate-analysis.md` (this file)
+* `research/scripts/scan_dims.py` — u16/u32 adjacent dimension-pair scanner
+* `research/data/dims_a6600.tsv` — 1408 dimension-pair hits with file/offset
+* `research/data/hex_avcam_834b10.txt` — hexdump of the capture-size table
+* `research/data/updater_strings.txt` — all strings from the updater image
+
+Regenerated locally (not in the repo):
+
+* `avcam.elf` — `research/scripts/mkelf.py`
+* `avcam.dis` (225 MB) — `llvm-objdump --triple=thumbv7-linux-gnueabihf -d avcam.elf`
+* `picrefs2.json` — `research/scripts/xref_pic2.py`
 
 ---
 
 # Follow-up: 4:3 movie aspect verification
 
-Scope: read-only. New method used here — `av-cam.bin` is a raw 0-based image (header `0a0000ea 4f52494c` = ARM `b`, magic `LIRO`; link base `0x635C6000`, verified because header entry `0x635C6044` resolves to a valid Thumb `push {r4-r11,lr}` at file offset `0x44`). It was wrapped in a synthetic ELF32 (`/tmp/opencode/open_gate/mkelf.py` → `avcam.elf`) and disassembled with `llvm-objdump --triple=thumbv7-linux-gnueabihf`. PIC references were recovered by decoding `ldr Rt,[pc,#imm]` + `add Rt, pc` pairs (`xref_pic2.py`, 110,719 refs → `picrefs2.json`); a literal is resolved as `target = u32(pool) + addr(add) + 4`.
+Scope: read-only. New method used here — `av-cam.bin` is a raw 0-based image (header `0a0000ea 4f52494c` = ARM `b`, magic `ORIL`; link base `0x635C6000`, verified because header entry `0x635C6044` resolves to a valid Thumb `push {r4-r11,lr}` at file offset `0x44`). It was wrapped in a synthetic ELF32 (`research/scripts/mkelf.py` → `avcam.elf`) and disassembled with `llvm-objdump --triple=thumbv7-linux-gnueabihf`. PIC references were recovered by decoding `ldr Rt,[pc,#imm]` + `add Rt, pc` pairs (`xref_pic2.py`, 110,719 refs → `picrefs2.json`); a literal is resolved as `target = u32(pool) + addr(add) + 4`.
 
 ## F1. Are `VALUEID_MOVIE_ASP_4_3` / `_15_9` selectable movie parameters, or pixel-aspect metadata?
 
