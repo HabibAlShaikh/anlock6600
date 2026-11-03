@@ -1,9 +1,5 @@
 # a6600 (ILCE-6600) open-gate 1080p — implementation plan
 
-> Working plan for this repo. Evidence lives in `docs/install-path.md`,
-> `docs/patch-map.md` and `docs/open-gate-analysis.md`; this file tracks the
-> gates, phases and effort.
-
 Date: 2026-11-03
 Target: ILCE-6600, firmware **1.10** (`38114_02.2020071501`), ARMv7 / CXD90045
 Scope: add a selectable **3:2** movie mode in the 1080 class (target 1920×1280,
@@ -31,8 +27,11 @@ fail-closed**. No hardware writes.
 >
 > **Phase 1 result (partial):** the movie record table is `av-cam.bin 0x87990C`
 > (stride 0x54, 16 entries); slot 801 at `0x879960` is the 1920×1080 candidate.
-> Width/height bytes are known, but the aspect enum has **no 3:2 value**, the 24p
-> rate code is unidentified, and the H.264 level path is in closed encoder blobs.
+> Width/height and rate bytes are known; 3:2 **does exist** in the libObj aspect
+> enums (the earlier "no 3:2" note was wrong), gated by a `0x2B` mask in
+> `FeaCore::SetRecAspect`. The real blocker is the request path: `libObj`'s
+> `FMTsize` has no 1920×1280 representation and the request validates size/sizeh/
+> frate against saved state. H.264 level remains unknown (closed encoder blobs).
 > No patched image was written. See repo `docs/patch-map.md`.
 
 ---
