@@ -45,9 +45,10 @@ Full detail: [`docs/open-gate-analysis.md`](docs/open-gate-analysis.md),
 | `docs/open-gate-analysis.md` | Open-gate / 3:2 feasibility: components, dimension tables, validators, verdict |
 | `docs/install-path.md` | G0: what the update and boot chain verify, where the FDAT verifier must live, install options |
 | `docs/patch-map.md` | Movie record table, candidate 1080 slot for 1920×1280, known bytes, and unresolved aspect/level work |
+| `docs/implementation-plan.md` | Phased plan: gates G0–G3, phases, test matrix, effort/risk |
 | `docs/a6600-vs-a6700.md` | a6600 vs a6700 platform comparison and feature-limit analysis |
 | `research/manifests/a6600-files.txt` | File listing of the decrypted firmware package |
-| `research/data/` | Dimension scan output, updater strings, annotated hex dump |
+| `research/data/` | Dimension scan output, updater strings, annotated hex dump, FDAT round-trip log |
 | `research/scripts/` | Small analysis helpers (container layout, dimension scan, xrefs, av-cam ELF reconstruction) |
 | `scripts/extract_a6600.py` | Official updater → decrypted FDAT → firmware tree, rootfs, `/usr`, system files |
 | `manifests/sha256.txt` | SHA-256 of key generated artifacts (input hashes are comments) |

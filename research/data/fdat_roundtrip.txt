@@ -1,0 +1,10 @@
+DAT size 316672424, chunks ['DATV', 'PROV', 'UDID', 'FDAT', 'DEND']
+FDAT 316672272 = cipher 316672000 + IV 16 + trailer 256
+IV 18978e78670d9ab547012a9622682b4b
+crypter CXD90045 plaintext 315434496
+CIPHERTEXT size new=316672000 orig=316672000
+CIPHERTEXT MATCH byte-for-byte (316672000 bytes, 309250 blocks)
+DEND crc orig=157d2ed5 new=157d2ed5
+DAT size new=316672424 orig=316672424
+DAT MATCH byte-for-byte (316672424 bytes)
+wrote /tmp/opencode/rt-final/rebuilt_fdat.bin and /tmp/opencode/rt-final/rebuilt.dat

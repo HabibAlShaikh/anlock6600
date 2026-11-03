@@ -14,6 +14,21 @@ Reproduce the container facts with:
 python3 research/scripts/inspect_updater.py Update_ILCE6600V110.exe
 ```
 
+Rebuild proof (needs fwtool + pycryptodomex; writes only to the output dir):
+
+```sh
+export PYTHONPATH=/path/to/fwtool.py
+python3 research/scripts/fdat_roundtrip.py Update_ILCE6600V110.exe /tmp/rt
+```
+
+Observed tail (saved in `research/data/fdat_roundtrip.txt`):
+
+```
+CIPHERTEXT MATCH byte-for-byte (316672000 bytes, 309250 blocks)
+DEND crc orig=157d2ed5 new=157d2ed5
+DAT MATCH byte-for-byte (316672424 bytes)
+```
+
 ## 1. The update chain
 
 ```
