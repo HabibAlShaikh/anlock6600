@@ -39,7 +39,8 @@ fail-closed**. No hardware writes.
 > patch `0x87FE0A` (code 2 height, byte-confirmed `0x87→0xA0`) + record 822
 > geometry; it also changes 1440×1080 to 1440×1280. Proper route: repurpose code 4
 > (or 12) and make libObj request it — codes pass the `cmp #0xC` store, but the
-> writer of the `ctx+0x3a8` per-slot `{codec,res}` array is unresolved. Aspect does
+> per-slot value comes from the `0x913854` format switch and its MWF msg
+> `0x2005/0x1025` selector; the sender is unresolved. Aspect does
 > not gate geometry; 16:9 metadata is wrong DAR but records. Level: no code or
 > table found. `libmpr 0xb162f8`/`0xb19740` are `.rodata` log labels, not code;
 > the chain ends at a virtual call (`0x54807c`, `r4=[r6+0x3cc]`). Codec blobs

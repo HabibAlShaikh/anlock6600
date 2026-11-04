@@ -155,8 +155,8 @@ Two routes:
   A new code `0xD` needs both `cmp #0xC` checks (`0x87FDDA`, `0x531154`) and a
   larger TBB.
 
-Either route still needs the `ctx+0x3a8` producer and record 822's
-`+0x04/+0x34/+0x48` to match the new geometry.
+Either route still needs the `0x913854` format switch (and its MWF `0x2005/0x1025`
+selector) plus record 822's `+0x04/+0x34/+0x48` to match the new geometry.
 
 ## 4.2 Aspect (M2 result)
 
@@ -216,8 +216,8 @@ inference only.
    inference only.
 4. **M4 — build:** the test-only route is now byte-confirmed. A dry-run diff can
    be produced, but it changes 1440×1080 too and proves the pipeline rather than
-   delivering the feature. The proper route waits on `ctx+0x3a8`.
+   delivering the feature. The proper route waits on the MWF `0x1025` sender.
 
-Only after the `ctx+0x3a8` writer is resolved is the per-slot patch a candidate
-rather than a guess, and only after G0 acceptance is a flashable image worth
-building.
+Only after the MWF sender and the format-code mapping are resolved is the per-slot
+patch a candidate rather than a guess, and only after G0 acceptance is a flashable
+image worth building.
