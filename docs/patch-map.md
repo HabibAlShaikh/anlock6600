@@ -1,11 +1,12 @@
 # Movie patch map — 1920×1280 3:2 24p (a6600 v1.10)
 
-Status: **partial — M1/M2 answered, level unknown.** The encoder size comes from
-`MPR::VResolution`, not from the av-cam record; no 1920×1280 code exists. A
-test-only patch can prove the pipeline; a proper feature needs a new/repurposed
-size code plus libObj request plumbing. The movie VALUEID namespace has no 3:2,
-but aspect does not gate geometry. No patched image has been written; no camera
-write has been attempted.
+Status: **partial — test-only route byte-confirmed; per-slot producer unresolved.**
+The encoder size comes from `MPR::VResolution`, not from the av-cam record; no
+1920×1280 code exists. A global `GetPictureSize` edit can prove the pipeline; a
+proper per-slot feature needs the `ctx+0x3a8` writer. The movie VALUEID namespace
+has no 3:2, but aspect does not gate geometry. Level source is profile metadata,
+not resolution-keyed. No patched image has been written; no camera write has been
+attempted.
 
 Target assumed: 1920×1280, AVC 8-bit 4:2:0, 24p, by repurposing one 1080 record.
 All offsets are file offsets in `out/system/av-cam.bin` (16,825,940 bytes).
@@ -119,21 +120,32 @@ There is no 1920×1280 entry. `FeaCore::SetRecDefinition` stores the code at
 `block+codec*0x108+0x1668`; `RecStart`/`EncStart`/`EncOpen` pass it to
 `GetPictureSize`.
 
+The size code is stored per slot in a settable struct, not hardcoded per FMTsize:
+`MprIf::SetRecDefinition` (`libmpr 0x8a5990`) → `FeaIf` (`0x54a7b0`) →
+`FeaCore` (`0x5310dc`) copies an 8-byte `{VCodec, VResolution}` entry from the
+array at `ctx+0x3a8` (libObj send site `0x8f614a`, caller `0x905dec`). Codes
+4/10/11/12 pass the `cmp #0xC` check and are stored; they fail only later in
+`GetPictureSize`. The **writer** of `ctx+0x3a8` (the real movie-format → code
+mapping) was not found; it is an indirect store, likely from the recorder param
+block or a message payload. No `{2,0,5,7,8,3}` table exists in libObj/libmpr.
+
+Byte confirmation: `0x87fe08: 4f f4 87 63` = `mov.w r3,#0x438` (1080). The
+single-byte change `0x87FE0A: 0x87 → 0xA0` gives `0x63a0` = 1280. Caveat: case 1
+(1440×1080) branches to `0x87fe06` and falls through, so this also changes
+1440×1080 to 1280 high. A code-2-only change needs the TBB byte at `0x87fde4`
+(`0x10`) retargeted into a code cave.
+
 Two routes:
 
-- **Test-only (smallest):** patch `libmpr 0x87FE0A` (case 2 height immediate
-  `0x438 → 0x500`, observed mechanism, needs byte-level confirmation) so code 2
-  returns 1920×1280. This makes **all** 1080p modes 1280-high; only useful to prove
-  the pipeline on a test unit.
-- **Proper:** repurpose an unused/less-useful code. Code 4 is "unsupported" and
-  its table entry at `0x87FDE6` is `0x3C` (error); pointing it at a 1920×1280 case
-  preserves 1080p. No free cave exists, so this reuses the 480×270 case at
-  `0x87FE4A/0x87FE50` and sacrifices code 12. A new code `0xD` needs both
-  `cmp #0xC` checks (`0x87FDDA`, `0x531154`) and a larger TBB.
+- **Test-only (smallest):** the `0x87FE0A` edit plus record 822 geometry. Proves
+  the pipeline; 1440×1080 becomes 1440×1280 if that mode is selected.
+- **Proper:** repurpose code 4 (currently unsupported; TBB entry `0x87FDE6` is
+  `0x3C`) or code 12 (480×270, case at `0x87FE4A/0x87FE50`), preserving 1080p.
+  A new code `0xD` needs both `cmp #0xC` checks (`0x87FDDA`, `0x531154`) and a
+  larger TBB.
 
-Either route still needs libObj to request the code (`MprIf::SetRecDefinition`
-takes an explicit `VResolutionParam`; there is no width/height→code mapping), and
-record 822's `+0x04/+0x34/+0x48` to match the new geometry.
+Either route still needs the `ctx+0x3a8` producer and record 822's
+`+0x04/+0x34/+0x48` to match the new geometry.
 
 ## 4.2 Aspect (M2 result)
 
@@ -143,6 +155,15 @@ helper and debug logging. The encoder gets one metadata byte from
 frame with the existing 16:9 code produces a 1920×1280 stream tagged 16:9 (wrong
 DAR), but no geometry rejection was found. A first recording test does **not**
 need a 3:2 VALUEID; correct DAR does.
+
+## 4.3 H.264 level (M3 result)
+
+`libmpr` has a profile/level source at `0xb162f8` (`ProfileInfo->avcProfileLevel`)
+with enum strings `AVC_PROFILE_LEVEL_MAIN_21 … HIGH_52`, and an SPS dump of
+`m_AVCLevelIndication` (`0xb19740`, values `0x1E`=3.0, `0x28`=4.0, `0x2A`=4.2).
+The closed codec blobs (`usr/codec/*_firmware.bin`) contain no level, MaxFS or
+MaxMBPS table. No resolution-keyed level table was observed; level appears to come
+from XAVC profile/clip metadata into the SPS. **Unknown**, not predicted.
 
 ## 5. Corrections to earlier notes (audit)
 
@@ -163,15 +184,18 @@ need a 3:2 VALUEID; correct DAR does.
 
 ## 6. Remaining mapping work
 
-1. **M1 — size plumbing: answered (partial).** `GetPictureSize` is the mapping;
-   no 1920×1280 code. Remaining: pin the exact libObj `FMTsize → VResolution`
-   producer and whether a repurposed code can be selected.
+1. **M1 — size plumbing: partial.** The code is a per-slot field forwarded from
+   `ctx+0x3a8`; codes 4/12 are already accepted. Remaining: the writer of
+   `ctx+0x3a8`. Only after that is a per-slot (non-global) edit definable.
 2. **M2 — aspect necessity: answered.** Not needed for a first recording test;
    only for correct DAR.
-3. **M3 — level:** inspect a known 1080 SPS or the encoder blobs; otherwise keep
-   Unknown. 1920×1280 needs Level 5.0 by spec inference only.
-4. **M4 — build:** after M1's remaining item, produce an offset list + dry-run
-   diff and ask before writing an image.
+3. **M3 — level: answered as Unknown.** Level comes from profile metadata, not a
+   resolution table; the codec blobs expose nothing. Level 5.0 remains a spec
+   inference only.
+4. **M4 — build:** the test-only route is now byte-confirmed. A dry-run diff can
+   be produced, but it changes 1440×1080 too and proves the pipeline rather than
+   delivering the feature. The proper route waits on `ctx+0x3a8`.
 
-Only after M1 is complete and M3 is answered is the patch a candidate rather than
-a guess, and only after G0 acceptance is a flashable image worth building.
+Only after the `ctx+0x3a8` writer is resolved is the per-slot patch a candidate
+rather than a guess, and only after G0 acceptance is a flashable image worth
+building.

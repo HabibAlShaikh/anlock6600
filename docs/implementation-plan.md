@@ -36,9 +36,13 @@ fail-closed**. No hardware writes.
 >
 > **M1/M2 result:** encoder w/h come from `MPR::VResolution` via
 > `GetPictureSize` (`libmpr 0x87FDD4`, 13 codes, no 1920×1280). Test-only route:
-> patch `0x87FE0A` (code 2 height) + record 822 geometry. Proper route: repurpose
-> code 4 (or 12) and make libObj request it. Aspect does not gate geometry; 16:9
-> metadata is wrong DAR but records. Level still unknown.
+> patch `0x87FE0A` (code 2 height, byte-confirmed `0x87→0xA0`) + record 822
+> geometry; it also changes 1440×1080 to 1440×1280. Proper route: repurpose code 4
+> (or 12) and make libObj request it — codes pass the `cmp #0xC` store, but the
+> writer of the `ctx+0x3a8` per-slot `{codec,res}` array is unresolved. Aspect does
+> not gate geometry; 16:9 metadata is wrong DAR but records. Level: source is
+> `ProfileInfo->avcProfileLevel` (`libmpr 0xb162f8`), not resolution-keyed; codec
+> blobs expose no level table → Unknown.
 
 ---
 

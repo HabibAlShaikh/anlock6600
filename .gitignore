@@ -33,3 +33,5 @@ a6700_cp/
 .DS_Store
 __pycache__/
 *.pyc
+
+CONTRIBUTING.md
