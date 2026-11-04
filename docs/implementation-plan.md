@@ -40,9 +40,19 @@ fail-closed**. No hardware writes.
 > geometry; it also changes 1440×1080 to 1440×1280. Proper route: repurpose code 4
 > (or 12) and make libObj request it — codes pass the `cmp #0xC` store, but the
 > writer of the `ctx+0x3a8` per-slot `{codec,res}` array is unresolved. Aspect does
-> not gate geometry; 16:9 metadata is wrong DAR but records. Level: source is
-> `ProfileInfo->avcProfileLevel` (`libmpr 0xb162f8`), not resolution-keyed; codec
-> blobs expose no level table → Unknown.
+> not gate geometry; 16:9 metadata is wrong DAR but records. Level: no code or
+> table found. `libmpr 0xb162f8`/`0xb19740` are `.rodata` log labels, not code;
+> the chain ends at a virtual call (`0x54807c`, `r4=[r6+0x3cc]`). Codec blobs
+> expose no level table → Unknown.
+>
+> **N1 result:** the VResolution value is chosen by switch helper `0x913854` from
+> the per-slot format field `obj+0x184*slot+0x208`, emitting constants `0..9`
+> (no `0xC`). The 24p 1080 path requests code 2; normal movie recording never
+> emits code 12. The format field is fed by MWF msg `0x2005/0x1025`
+> (`GetParam(0x2002)` at `0x90bf5c`). A per-slot edit needs a new switch case or
+> a repurposed format code, plus the msg producer; there is no static data table.
+> Audit also corrected: the fill buffer is stack-local (`libObj 0x904f84`), and
+> `0xbb`/`0x3ed` are log arguments, not array metadata.
 
 ---
 

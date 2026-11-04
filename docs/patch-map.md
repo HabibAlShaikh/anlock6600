@@ -1,12 +1,12 @@
 # Movie patch map — 1920×1280 3:2 24p (a6600 v1.10)
 
-Status: **partial — test-only route byte-confirmed; per-slot producer unresolved.**
-The encoder size comes from `MPR::VResolution`, not from the av-cam record; no
-1920×1280 code exists. A global `GetPictureSize` edit can prove the pipeline; a
-proper per-slot feature needs the `ctx+0x3a8` writer. The movie VALUEID namespace
-has no 3:2, but aspect does not gate geometry. Level source is profile metadata,
-not resolution-keyed. No patched image has been written; no camera write has been
-attempted.
+Status: **partial — fill site mapped; per-slot selection upstream.** The encoder
+size comes from `MPR::VResolution`, not from the av-cam record; no 1920×1280 code
+exists. A global `GetPictureSize` edit can prove the pipeline; a proper per-slot
+feature needs a new switch case in `0x913854` (or a repurposed format code) and
+the sender of MWF msg `0x2005/0x1025`. The movie VALUEID namespace has no 3:2, but
+aspect does not gate geometry. Level source is unresolved. No patched image has
+been written; no camera write has been attempted.
 
 Target assumed: 1920×1280, AVC 8-bit 4:2:0, 24p, by repurposing one 1080 record.
 All offsets are file offsets in `out/system/av-cam.bin` (16,825,940 bytes).
@@ -120,14 +120,25 @@ There is no 1920×1280 entry. `FeaCore::SetRecDefinition` stores the code at
 `block+codec*0x108+0x1668`; `RecStart`/`EncStart`/`EncOpen` pass it to
 `GetPictureSize`.
 
-The size code is stored per slot in a settable struct, not hardcoded per FMTsize:
+The size code is stored per slot, not hardcoded per FMTsize:
 `MprIf::SetRecDefinition` (`libmpr 0x8a5990`) → `FeaIf` (`0x54a7b0`) →
-`FeaCore` (`0x5310dc`) copies an 8-byte `{VCodec, VResolution}` entry from the
-array at `ctx+0x3a8` (libObj send site `0x8f614a`, caller `0x905dec`). Codes
-4/10/11/12 pass the `cmp #0xC` check and are stored; they fail only later in
-`GetPictureSize`. The **writer** of `ctx+0x3a8` (the real movie-format → code
-mapping) was not found; it is an indirect store, likely from the recorder param
-block or a message payload. No `{2,0,5,7,8,3}` table exists in libObj/libmpr.
+`FeaCore` (`0x5310dc`) copies an 8-byte `{VCodec, VResolution}` entry from a
+**stack-local buffer at `r7+0x3a8`** in `libObj 0x904f84` (send site `0x905de6`,
+wrapper `0x8f6124`). Max 4 entries (`cmp r2,#4` at `0x5310fc`); codes `0..0xC`
+pass the store check. `GetPictureSize` then rejects 4/10/11 and accepts 12
+(480×270). The buffer is filled indirectly from `arg1` (`[r7,#0x20]`); no direct
+`[r7,#0x3a8]` store exists in that function. The earlier "`ctx+0x3a8` object
+field, header `0xbb`/size `0x3ed`" was **wrong** — `r7` is a stack frame and
+`0xbb`/`0x3ed` are `Log::Set` arguments at `0x8f613a–0x8f6140`.
+
+Fill site (N1 result): the array is built from `arg1 = this+0x7ec` (4 dwords plus
+a count at `this+0x7fc`) inside `ObjMovieRecorder` state handlers
+(`0x9089d4`, `0x909b38`). The resolution field is not copied from arg1; it is
+chosen by switch helper `0x913854`, keyed on the per-slot format field
+`obj+0x184*slot+0x208` (getter `0x8f90e6`), writing constants `0..9` — no `0xC`.
+The 24p 1080 path therefore requests VResolution **2**, and normal movie recording
+never emits code 12. The per-slot format value is fed by MWF message
+cat `0x2005` / id `0x1025` (`GetParam(0x2002)` at `0x90bf5c`, setter `0x8f910a`).
 
 Byte confirmation: `0x87fe08: 4f f4 87 63` = `mov.w r3,#0x438` (1080). The
 single-byte change `0x87FE0A: 0x87 → 0xA0` gives `0x63a0` = 1280. Caveat: case 1
@@ -158,12 +169,15 @@ need a 3:2 VALUEID; correct DAR does.
 
 ## 4.3 H.264 level (M3 result)
 
-`libmpr` has a profile/level source at `0xb162f8` (`ProfileInfo->avcProfileLevel`)
-with enum strings `AVC_PROFILE_LEVEL_MAIN_21 … HIGH_52`, and an SPS dump of
-`m_AVCLevelIndication` (`0xb19740`, values `0x1E`=3.0, `0x28`=4.0, `0x2A`=4.2).
-The closed codec blobs (`usr/codec/*_firmware.bin`) contain no level, MaxFS or
-MaxMBPS table. No resolution-keyed level table was observed; level appears to come
-from XAVC profile/clip metadata into the SPS. **Unknown**, not predicted.
+There is no observed level code or table. `libmpr 0xb162f8` and `0xb19740` are
+`.rodata` log labels (`" ProfileInfo->avcProfileLevel: "`,
+`" m_AVCLevelIndication : 0x"`), not code addresses; the earlier attribution was
+wrong. The only chain found is `MprIf::GetContentProfileInfo` (`0x89ebac`) →
+`FeaIf` (`0x54800e`) → virtual call `blx r4` at `0x54807c` (`r4=[r6+0x3cc]`).
+The `AVC_PROFILE_LEVEL_*` name ladder suggests a fixed profile+level enum, but the
+vtable target and the SPS level-byte writer are unresolved. The closed codec blobs
+contain no level/MaxFS/MaxMBPS table. **Unknown**; Level 5.0 remains a spec
+inference only.
 
 ## 5. Corrections to earlier notes (audit)
 
@@ -174,6 +188,11 @@ from XAVC profile/clip metadata into the SPS. **Unknown**, not predicted.
 - **Wrong:** "change slot 801 rate 2 → 3 for 24p". `+0x0C` is a match key; the edit
   duplicates record 822 and shadows the existing 24p entry. Candidate is 822, key
   unchanged.
+- **Wrong:** "`ctx+0x3a8` is an object field with header `0xbb`/size `0x3ed`".
+  `r7` is a stack frame in `libObj 0x904f84`; `0xbb`/`0x3ed` are `Log::Set`
+  arguments. The array is stack-local, filled from `this+0x7ec`.
+- **Wrong:** "level source at `libmpr 0xb162f8`/`0xb19740`". Both are `.rodata`
+  log labels, not code. Level remains Unknown.
 - **Corrected earlier:** `CnvMovieAspect` = `0x239D1`, table `0x376EC =
   [3,1,4,2,0]`; `0x376F8` is element 3 of the same array. Still twin
   `CnvStillAspect` uses `0x37920`.
@@ -184,9 +203,12 @@ from XAVC profile/clip metadata into the SPS. **Unknown**, not predicted.
 
 ## 6. Remaining mapping work
 
-1. **M1 — size plumbing: partial.** The code is a per-slot field forwarded from
-   `ctx+0x3a8`; codes 4/12 are already accepted. Remaining: the writer of
-   `ctx+0x3a8`. Only after that is a per-slot (non-global) edit definable.
+1. **M1 — size plumbing: partial.** The fill site is the `0x913854` switch over
+   the per-slot format field `+0x208`; it emits constants `0..9`, so there is no
+   direct `0xC`. Remaining: the sender of MWF msg `0x2005/0x1025` and whether its
+   param `0x2002` can select a new format case. A per-slot edit needs either a
+   new switch case or a repurposed format code; a static data table does not
+   exist.
 2. **M2 — aspect necessity: answered.** Not needed for a first recording test;
    only for correct DAR.
 3. **M3 — level: answered as Unknown.** Level comes from profile metadata, not a
