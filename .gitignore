@@ -35,3 +35,6 @@ __pycache__/
 *.pyc
 
 CONTRIBUTING.md
+
+# built shim
+tools/*.so
