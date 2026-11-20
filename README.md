@@ -155,9 +155,10 @@ without touching anyone's camera.
    `0800_appli/setting/*` onto `nflasha2`, and does it create new
    subdirectories? `uc_mkfs.elf` only runs `mkdosfs`; the copy is elsewhere.
 5. **`av-cam.bin` runtime delivery.** `im.elf` passes
-   `fn=/system/av-cam.bin load=1 debug=1 adr=…` to a module loaded with
-   `init_module`. Which module consumes it, and can the record table be replaced
-   at runtime without writing the partition?
+   `fn=/system/av-cam.bin load=1 debug=1 adr=…` to `liro.ko`, which reads the
+   file with `filp_open`. Can the record table be replaced at runtime without
+   writing the partition (e.g. reload `liro` with a patched copy, or patch the
+   loaded image in RAM)?
 
 A bricked or donor A6600 board, or a service manual, is worth more than any
 amount of speculation. If you can answer one of these with reproducible

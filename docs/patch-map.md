@@ -102,13 +102,22 @@ Do **not** change `0x879C60` (`+0x0C = 3`): it is the 24p match key.
    raw image. `im.elf` builds the string
    `fn=/system/av-cam.bin load=1 debug=1 adr=0x%x %s %s` (`0xc350`, code xref
    `0xb3d0`) and passes it as the parameter block of a module loaded through
-   `init_module` (`syscall 0x80` after `open`+`mmap`, helper at `0xb27c`). So the
-   file is named to a **kernel** module, not read by userland; an `LD_PRELOAD`
-   shim cannot intercept that read. Whether the module opens the file itself or
-   uses the address supplied in `adr=` is **unknown**, and the module was not
-   identified. Until a user-space delivery point exists, the no-flash route is
-   incomplete; the alternative is a persistent `av-cam.bin` patch, which returns
-   to G0.
+   `init_module` (`syscall 0x80` after `open`+`mmap`, helper at `0xb27c`). The
+   parameters match **`usr/kmod/liro.ko`**, the only module declaring
+   `fn:string`, `adr:uint`, `load`, `debug` and `delay`; it imports `filp_open`
+   and `vmalloc` and logs `Load firmware %s to %x`, `Magic unmatched` and
+   `version unmatched`. So kernel code reads the file, and an `LD_PRELOAD` shim
+   cannot intercept it.
+
+   Delivery options, all unproven:
+   (a) persistent patch of `/system/av-cam.bin` — returns to G0;
+   (b) root `rmmod liro` + `insmod liro.ko fn=<patched copy> adr=<original>`;
+   unload safety and the original `adr` value (read from `Backup_read` by
+   `im.elf`) are unknown;
+   (c) patch the firmware in physical RAM after load (`/dev/mem` or a driver
+   interface); no evidence yet that such access exists.
+
+   Until one is proven, the no-flash route is incomplete.
 
 `libmprctrl.so` has a native 3:2 still-size family at `0x26974` (`1920,1280`,
 `2048,1360`, `2128,1416`); it does not make it a movie mode.
