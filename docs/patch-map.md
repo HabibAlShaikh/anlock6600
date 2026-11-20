@@ -2,11 +2,12 @@
 
 Status: **partial — fill site mapped; per-slot selection upstream.** The encoder
 size comes from `MPR::VResolution`, not from the av-cam record; no 1920×1280 code
-exists. A global `GetPictureSize` edit can prove the pipeline; a proper per-slot
-feature needs a new switch case in `0x913854` (or a repurposed format code) and
-the sender of MWF msg `0x2005/0x1025`. The movie VALUEID namespace has no 3:2, but
-aspect does not gate geometry. Level source is unresolved. No patched image has
-been written; no camera write has been attempted.
+exists. A global `GetPictureSize` edit can probe part of the pipeline, but it
+does not change record 822 and is not a valid open-gate test on its own. A proper
+per-slot feature needs a new switch case in `0x913854` (or a repurposed format
+code) and the sender of MWF msg `0x2005/0x1025`. The movie VALUEID namespace has
+no 3:2, but aspect does not gate geometry. Level source is unresolved. No patched
+image has been written; no camera write has been attempted.
 
 Target assumed: 1920×1280, AVC 8-bit 4:2:0, 24p, by repurposing one 1080 record.
 All offsets are file offsets in `out/system/av-cam.bin` (16,825,940 bytes).
@@ -96,6 +97,18 @@ Do **not** change `0x879C60` (`+0x0C = 3`): it is the 24p match key.
    inference.
 5. **Install.** G0 is unproven (`docs/install-path.md`): container rebuild is
    solved, acceptance is not.
+6. **Runtime delivery of the record change.** The preload route can reach
+   `libmpr.so` inside `im.elf`, but record 822 lives in `av-cam.bin`, a separate
+   raw image. `im.elf` builds the string
+   `fn=/system/av-cam.bin load=1 debug=1 adr=0x%x %s %s` (`0xc350`, code xref
+   `0xb3d0`) and passes it as the parameter block of a module loaded through
+   `init_module` (`syscall 0x80` after `open`+`mmap`, helper at `0xb27c`). So the
+   file is named to a **kernel** module, not read by userland; an `LD_PRELOAD`
+   shim cannot intercept that read. Whether the module opens the file itself or
+   uses the address supplied in `adr=` is **unknown**, and the module was not
+   identified. Until a user-space delivery point exists, the no-flash route is
+   incomplete; the alternative is a persistent `av-cam.bin` patch, which returns
+   to G0.
 
 `libmprctrl.so` has a native 3:2 still-size family at `0x26974` (`1920,1280`,
 `2048,1360`, `2128,1416`); it does not make it a movie mode.

@@ -1,9 +1,10 @@
-# Serial root shell — what the firmware already does
+# Serial console — the shell launch the firmware attempts
 
-Status: **proven from the binaries, untested on hardware.** The boot path starts
-an unauthenticated root shell on the serial console at every power-on. This is
-the recovery path for every experiment in this repository, and the shortest way
-to get files onto `/setting`.
+Status: **unconditional shell launch attempt found statically; no hardware
+validation.** The boot path tries to exec `/bin/ash` on a console device at every
+power-on. Whether that console is physically reachable, accepts input, or
+survives an `im.elf` failure is unproven. If it does work, it is the recovery
+path for preload experiments and the shortest way to get files onto `/setting`.
 
 Target: ILCE-6600, firmware **1.10**, ARMv7 / CXD90045.
 Evidence: `out/rootfs/sbin/init` (27,006 B), `out/usr/bin/launch_shell.elf`
@@ -39,10 +40,11 @@ Order inside `main`:
 0x9b2e  launch_shell()
 ```
 
-`bootin` is started first and detaches (`im.elf … &`), so the shell comes up
-while the application is still booting — available even when `im.elf` fails.
+`bootin` is started first and detaches (`im.elf … &`), so if the console works it
+should come up while the application is still booting — including when `im.elf`
+dies. This ordering is static inference; confirm it from a live boot log.
 `putenv("LD_PRELOAD=")` at `0x9b24` strips any inherited preload before the
-handover, so the shell itself always runs clean.
+handover, so the shell itself should run clean.
 
 If `execl` fails, `launch_shell` returns and `main` logs
 `launch_shell() failed` (`0x9b3e`) and then loops
@@ -68,27 +70,31 @@ format at `0x8b16`) selects a device and hands over to `/bin/ash`:
 No credential check exists in the binary; the only strings it uses are the two
 device paths, `/dev/ram0`, `/bin/ash` and the error formats.
 
-The kernel command line in `init` sets `console=ttyAM0`, so `/dev/console` is the
-SoC UART and `/dev/ttycons` is the same console from the application side.
+The kernel command line is expected to use `console=ttyAM0`; `init` contains
+that literal, but the actual `/proc/cmdline`, device nodes and physical mapping
+must be confirmed on hardware. Treat `/dev/console` = SoC UART as an inference,
+not a fact.
 
-## 3. Consequences
+## 3. Consequences if it works
 
-1. **Recovery is possible for every change in this repo.** A broken
-   `LD_PRELOAD` library, a bad `/setting` file or a blocked `im.elf` can be
-   undone from the shell: mount (or `rm` from) `/setting` and reboot.
-2. **Partition backups become possible** before any risky step — dump
-   `/dev/nflasha*` to the SD card.
+1. **Rollback becomes possible for preload and `/setting` changes.** A broken
+   preload library or bad `/setting` file can be undone from the shell: restore
+   `dmode`, empty `preload`, delete the library, reboot. It does not make an
+   arbitrary flash or partition write safe.
+2. **Partition backups become possible** before any risky step — read
+   `/dev/nflasha*` to an SD card and verify hashes on both sides.
 3. **No firmware update is needed to place a file in `/setting`** once the shell
-   is reachable, which removes the FDAT-trailer problem from the critical path.
-4. The shell is started after `bootin`, but `bootin` backgrounds `im.elf`, so the
-   shell is reachable while the application is still starting — including when
-   `im.elf` dies. Confirm the timing from a live boot log.
+   is interactive, which removes the FDAT-trailer problem from that route.
+4. The shell is started after `bootin`, but `bootin` backgrounds `im.elf`, so it
+   should be reachable while the application is still starting. Confirm the
+   timing from a live boot log.
 
 ## 4. What is still unknown
 
 | Item | Status |
 |---|---|
 | Physical test points on the A6600 mainboard | unknown — needs service manual or a teardown |
+| Whether the boot shell is reachable and interactive | unknown — static call site only |
 | Logic level | assume 3.3 V TTL; **measure before connecting** |
 | Baud rate | start at 115200 8N1; `init` does not set it, the kernel default applies |
 | Whether `ttyAM0` is exposed as a pad or only through the USB/service connector | unknown |
@@ -106,15 +112,26 @@ SoC UART and `/dev/ttycons` is the same console from the application side.
 5. Only after a clean log is captured, connect TX and confirm a prompt appears.
 6. First session, all read-only: `id`, `cat /proc/cmdline`, `mount`, `ls -l
    /setting/mode`, `cat /setting/mode/dmode`, `dmesg | tail`.
-7. Then dump partitions to SD before changing anything:
-   `dd if=/dev/nflasha15 of=/mnt/sd/nflasha15.bin bs=1M`.
+7. Before changing anything, enumerate devices (`ls -l /dev/nflasha*`,
+   `cat /proc/partitions`, `mount`, `df -h`) and check free SD space. Dump the
+   critical partitions, then hash them on camera and host:
+
+   ```sh
+   dd if=/dev/nflasha2  of=/mnt/sd/nflasha2.bin  bs=1M
+   dd if=/dev/nflasha15 of=/mnt/sd/nflasha15.bin bs=1M
+   sync
+   sha256sum /mnt/sd/nflasha2.bin /mnt/sd/nflasha15.bin
+   ```
+
+   A `dd` exit status alone is not a verified backup.
 
 Do not send `change_mode.sh`, write `/setting`, or touch `/dev/nflasha*` until
-the backup in step 7 is verified by size and hash.
+the backup files have correct sizes and hashes, and until a harmless
+`/setting/mode/` create-delete-reboot drill has passed.
 
 ## 6. Why this matters for the goal
 
-`docs/preload-path.md` describes a two-file, reboot-reversible change that
-patches the 1080p encoder size to 1920×1280. The only missing piece is a way to
-write those two files. The serial shell is that way, and unlike the update route
-it needs no container rebuild, no trailer explanation and no flash.
+`docs/preload-path.md` describes a small, reboot-reversible change that patches
+the 1080p encoder size to 1920×1280. The serial shell would provide a way to
+write those files without a firmware update, but the record table, sensor
+readout and SPS still have to agree. The shell is necessary, not sufficient.

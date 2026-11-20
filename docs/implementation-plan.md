@@ -7,6 +7,25 @@ Scope: add a selectable **3:2** movie mode in the 1080 class (target 1920×1280,
 Status of evidence: Phase 0 (G0) investigated statically — G0 **unresolved,
 fail-closed**. No hardware writes.
 
+> **Review corrections (2026-11-20):**
+> 1. The runtime preload route (`docs/preload-path.md`) changes only the
+>    encoder-size query in `libmpr.so`. It does **not** change record 822 in
+>    `av-cam.bin`, sensor readout or SPS. `og.so` alone is not a complete
+>    open-gate test and must not be installed as one.
+> 2. `av-cam.bin` contains **IMX284E** imager-driver symbols, but also
+>    IMX210/IMX094 PSF headers, so it is shared across models and does not prove
+>    the fitted part. External lists name IMX271AQR for the a6600. G1 is
+>    "sensor readout", not "IMX284 readout".
+> 3. `init` unconditionally *attempts* to launch `/bin/ash` on a console. An
+>    interactive serial shell and file-level rollback are still unproven, so
+>    recovery is conditional (`docs/uart-shell.md`).
+> 4. 1920×1280 is 9,600 macroblocks, above H.264 Level 4.2 MaxFS 8,704, so a
+>    compliant stream needs Level 5.0. Whether the encoder selects that level
+>    is unknown; measure a stock clip's SPS before changing anything.
+> 5. G2 for a preload-only experiment means a verified `/setting` backup plus a
+>    demonstrated restore of the changed files. A full NAND restore test is
+>    required before any partition/flash write, not before a runtime file test.
+
 > **Phase 0 result, corrected (2026-11-03, pass 2):** the entire extractable
 > update path is the normal OS: `im.elf → libIMDB → libupdaterufp → crypter →
 > bodyimg(cramfs) → libupdaterbody → scripts`. It verifies **CRC32 only**; the
@@ -103,9 +122,9 @@ verify the firmware. The remaining unknown is the 256-byte FDAT trailer and the
 loader/ROM; the install is plausibly open but unproven. **If G0 fails, the project
 stops at research.** No exceptions.
 
-**G1 — Sensor readout.** The IMX284 must have a 3:2 binning/window mode that
-runs at 24 or 30 fps with acceptable rolling shutter. If the only 3:2 mode is
-the slow still readout, the plan stops.
+**G1 — Sensor readout.** The A6600 sensor must have a 3:2 binning/window mode
+that runs at 24 or 30 fps with acceptable rolling shutter. Identify the actual
+sensor part first. If the only 3:2 mode is the slow still readout, the plan stops.
 
 **G2 — Recovery.** A complete partition dump and a *tested* restore on the same
 unit, plus a second unit or a service option, before any write. Without this,
@@ -158,8 +177,8 @@ Open `out/avcam.elf` (from `research/scripts/mkelf.py`) and the ARM ELFs.
   another mode.
 
 ### 5.3 Sensor and timing
-- Locate the IMX284 mode table in `av-cam.bin`: full 6000×4000, binning modes,
-  line rates, exposure limits.
+- Locate the sensor mode table in `av-cam.bin`: full 6000×4000, binning modes,
+  line rates, exposure limits. First confirm which sensor part the A6600 uses.
 - Determine whether a 3:2 window/binning mode exists at video rates (G1).
 - Check memory stride/alignment: 1920 width and 1280 height are already
   macroblock-aligned, so no padding change is expected.
@@ -292,6 +311,7 @@ useful: it prevents others from bricking cameras chasing the same mode.
    answer G0 with evidence.
 2. Open `out/avcam.elf` in REA/rizin and finish the validator + format-table
    map; record exact offsets in `docs/patch-map.md`.
-3. Search the IMX284 mode table for a 3:2 video-rate readout; answer G1.
+3. Search the imager mode table for a 3:2 video-rate readout; answer G1 once the
+   fitted part is known.
 
 Do not start patching before 1 and 3 have answers.

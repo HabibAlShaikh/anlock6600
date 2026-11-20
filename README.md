@@ -13,11 +13,11 @@ firmware, no keys, no patched images.
 |---|---|
 | **Proven** | The 1.10 extraction is reproducible and hash-checked (`scripts/extract_a6600.py`, `verify: ok`). |
 | | Encoder dimensions come from `MprLibCore::GetPictureSize()` in `libmpr.so` (`0x87fdd4`); code 2 is 1920×1080. |
-| | A one-byte change at `0x87fe0a` turns that case into 1920×1280 — disassembly-verified offline (`tools/verify_patch.py`). |
+| | A one-byte change at `0x87fe0a` changes that function's returned height from 1080 to 1280 — disassembly-verified offline (`tools/verify_patch.py`). It does not by itself change the record table, sensor readout or SPS. |
 | | `bootin.elf` reads `/setting/mode/preload` and passes it to `im.elf` as `LD_PRELOAD`; `/usr/bin/change_mode.sh` is Sony's own tool for writing those files. |
-| | `init` starts an unauthenticated **root shell on the serial console at every boot** (`docs/uart-shell.md`). |
+| | `init` **unconditionally attempts** to exec `/bin/ash` on a console device at every boot; a usable serial shell is not verified (`docs/uart-shell.md`). |
 | **Blocking** | Physical UART test points, logic level and baud rate on the A6600 mainboard are unknown. |
-| | IMX284 3:2 readout at 24/30 fps is unproven. |
+| | `av-cam.bin` contains **IMX284E** imager-driver symbols, but the same image also carries IMX210/IMX094 PSF headers, so it appears shared across models. The fitted part and a 3:2 readout mode at 24/30 fps are unverified. |
 | | H.264 SPS/level metadata for a 1280-high stream is unproven. |
 | | The update step that copies `0800_appli/setting/*` onto `nflasha2` is not identified. |
 | | FDAT 256-byte trailer acceptance is unresolved (matters only for the flash route). |
@@ -36,31 +36,43 @@ Nothing has been written to the camera. No flashing has been attempted.
 - The only 1440×1080 movie path is **anamorphic 16:9** (displays as 1920×1080).
 - 1920×1280 and 1920×1440 exist **only as still-photo sizes**. They never enter
   `av-cam.bin` or any movie format name.
-- The AVC encoder is **not the limit**: it accepts explicit width/height/canvas
-  sizes, is 4K-capable, and 1920×1280 is well inside its limits. The blockers are
-  the mode tables, LiroSeq validators, UI, sensor readout mode and SPS metadata.
+- No dimension restriction was found in the visible encoder interface: it takes
+  explicit width/height/canvas sizes and is 4K-capable. The closed encoder's SPS
+  and level behaviour remains unknown; the blockers are the mode tables, LiroSeq
+  validators, UI, sensor readout mode and SPS metadata.
 - The a6600 has an **8-bit 4:2:0 AVC** encoder and no HEVC encoder assets.
-- `GetPictureSize` is called only from inside `libmpr.so`, so symbol
+- No dynamic reference to `GetPictureSize` exists outside `libmpr.so`, so symbol
   interposition cannot reach it; the shim patches the instruction in memory
   instead (`docs/preload-path.md`).
+- `im.elf` hands `/system/av-cam.bin` to a **kernel** module as a parameter
+  string (`fn=… load=1 debug=1 adr=…`) loaded via `init_module`, not as a
+  user-space file read. An `LD_PRELOAD` shim has no interception point for it
+  (`docs/patch-map.md`).
 - No cryptographic verifier was found in any extractable update code. The
   update runs from the normal OS (`im.elf → libIMDB → libupdaterufp → crypter`)
   and checks CRC32 only; the FDAT's 256-byte trailer is never read by that path.
   Modified updates are **plausibly installable but unproven**
   (`docs/install-path.md`).
 
-## Route
+## Route (not yet a validated procedure)
 
-The working plan avoids flashing entirely:
+The runtime path is promising but incomplete. In order:
 
-1. Reach the serial shell (`docs/uart-shell.md`) → dump partitions to SD.
-2. Copy `tools/og.so` to `/setting/mode/`, run
-   `change_mode.sh p /setting/mode/og.so`, reboot (`docs/preload-path.md`).
-3. Record 1080p24, check with `ffprobe`. Expect 1920×1280 with a wrong 16:9 DAR
-   on the first pass; the aspect/SPS fix is a separate step.
-4. Only then decide whether a permanent per-slot implementation is worth it.
+1. Prove an interactive serial shell and a write/delete/reboot rollback of a
+   harmless file under `/setting/mode/` (`docs/uart-shell.md`).
+2. Resolve how record 822's geometry is changed to match the encoder size.
+   `av-cam.bin` is a separate raw image; an `im.elf` preload does not edit it
+   (`docs/patch-map.md`).
+3. Resolve sensor readout and H.264 SPS/level behaviour.
+4. Only then install the complete change, after a verified backup.
+5. Record a short 1080p24 clip and inspect it with `ffprobe`; treat any result as
+   evidence, not success.
 
-The update/FDAT route is the fallback if the UART turns out to be output-only.
+`og.so` on its own changes one size query and does **not** make a valid
+open-gate recording. Do not test it alone on the camera.
+
+The update/FDAT route remains the fallback if the UART turns out to be
+unavailable or output-only.
 
 ## Repo layout
 
@@ -69,7 +81,7 @@ The update/FDAT route is the fallback if the UART turns out to be output-only.
 | `docs/open-gate-analysis.md` | Open-gate / 3:2 feasibility: components, dimension tables, validators, verdict |
 | `docs/install-path.md` | G0: what the update and boot chain verify, where the FDAT verifier must live, install options |
 | `docs/preload-path.md` | `/setting/mode/{dmode,preload}` → `LD_PRELOAD` in `im.elf`; the in-memory patch and its limits |
-| `docs/uart-shell.md` | The root shell `init` starts on the serial console, and the read-only test protocol |
+| `docs/uart-shell.md` | The unconditional shell launch attempt in `init`, and the read-only test protocol |
 | `docs/patch-map.md` | Movie record table, candidate 1080 slot for 1920×1280, known bytes, unresolved aspect/level work |
 | `docs/implementation-plan.md` | Phased plan: gates G0–G3, phases, test matrix, effort/risk |
 | `docs/a6600-vs-a6700.md` | a6600 vs a6700 platform comparison and feature-limit analysis |
@@ -126,19 +138,26 @@ model/version check.
 
 ## Where help is needed
 
-Four questions, in order of usefulness. Each can be answered with evidence and
+Five questions, in order of usefulness. Each can be answered with evidence and
 without touching anyone's camera.
 
 1. **UART on the ILCE-6600 mainboard.** Test-point location, logic level and
    baud rate. A board photo with labelled pads, or the service manual, unblocks
-   everything else — the firmware already starts a root shell on that port.
-2. **IMX284 readout modes.** Does the sensor support a 3:2 crop or binning mode
-   at 24/30 fps (e.g. 2120×1416)? Datasheet, register table or timing evidence.
+   everything else — the firmware already tries to start a root shell on that
+   port (interactivity unproven).
+2. **A6600 sensor identity and readout modes.** `av-cam.bin` carries IMX284E
+   driver symbols, but it is a shared multi-model image. Confirm which part is
+   fitted, then whether it supports a 3:2 crop or binning mode at 24/30 fps
+   (e.g. 2120×1416). Datasheet, register table, board marking or timing evidence.
 3. **Non-16:9 AVC in any Sony body.** If some Sony camera records a taller than
    16:9 AVC stream, its SPS and level handling is the reference we need.
 4. **The `0800_appli` copy step.** Which updater component installs
    `0800_appli/setting/*` onto `nflasha2`, and does it create new
    subdirectories? `uc_mkfs.elf` only runs `mkdosfs`; the copy is elsewhere.
+5. **`av-cam.bin` runtime delivery.** `im.elf` passes
+   `fn=/system/av-cam.bin load=1 debug=1 adr=…` to a module loaded with
+   `init_module`. Which module consumes it, and can the record table be replaced
+   at runtime without writing the partition?
 
 A bricked or donor A6600 board, or a service manual, is worth more than any
 amount of speculation. If you can answer one of these with reproducible
@@ -149,8 +168,11 @@ evidence, open an issue.
 - Do **not** flash a modified FDAT. The update path has no visible signature
   check, but the 256-byte trailer is unexplained and there is no verified
   recovery path. Treat acceptance as unproven.
+- **Do not run `og.so` alone.** The camera's capture record still describes
+  1920×1080 while the encoder would be told 1920×1280; that mismatch is untested
+  and may corrupt the recording or the application.
 - A broken preload library can boot-loop the camera. It is only safely testable
-  once the serial shell is reachable.
+  once an interactive serial shell and a proven file rollback exist.
 - Do not write unknown PTP properties or invoke backup/restore, registration or
   power-control commands on a camera you cannot afford to lose.
 - Charge the battery before any camera-side testing.

@@ -23,7 +23,7 @@ All offsets are **file offsets** into the named file, not virtual addresses.
 
 | Path | Size | Role (evidence) |
 |---|---|---|
-| `out/system/av-cam.bin` | 16,825,940 | Main camera/AV control firmware: imager driver (`IMX284`), ADF/AVIO pipeline, `LiroSeq` parameter checks, `[CODEC V]` open/start params, AVC/HEVC/AVCHD/JPEG control, `CapIdTblMgr`. Raw ARM image (header `0a 00 00 ea 4f 52 49 4c` = `b` + `"ORIL"`). |
+| `out/system/av-cam.bin` | 16,825,940 | Main camera/AV control firmware: imager driver (`IMX284E` symbols), ADF/AVIO pipeline, `LiroSeq` parameter checks, `[CODEC V]` open/start params, AVC/HEVC/AVCHD/JPEG control, `CapIdTblMgr`. Raw ARM image (header `0a 00 00 ea 4f 52 49 4c` = `b` + `"ORIL"`). |
 | `out/usr/bin/orb-server` | 5,976,888 | ARM ELF, network/remote-control server. Only XAVC/AVCHD name strings, no geometry. |
 | `out/usr/lib/libObj.so` | 20,889,004 | UI object layer. Holds `VALUEID_MOVIE_ASP_*`, `V_PICT_SIZE_*`, `PARAMID_MOVIE_*`, `PARAMID_CAP_INFO_*`, `ModelIdTable`. |
 | `out/usr/lib/libmpr.so` | 12,741,872 | MPR media layer: `PICT_SIZE_*`, `MOVIE_FORMAT_TYPE_*`, `XavcMRecFltMgr`, `AviMMgr`, `VPictSize`, pixel-aspect/AVCHD metadata. |
@@ -170,7 +170,7 @@ has nothing to match it against.
 
 ## 5. Sensor readout modes
 
-* Sensor identified as **IMX284** by RTTI in `av-cam.bin`: `N6Camera6Imager6IMX28419C_ImagerCtrl_IMX284E` (0x95338B), `N6Camera6Imager21ImagerDrvParam_IMX284E` (0x9533B8), `SB_Async/SB_ZpdFittingTbl_IMX284_DMHH.cpp` (0x9D4422). 6000×4000 is the a6600 still frame.
+* `av-cam.bin` contains IMX284E imager-driver strings: `N6Camera6Imager6IMX28419C_ImagerCtrl_IMX284E` (0x95338B), `N6Camera6Imager21ImagerDrvParam_IMX284E` (0x9533B8), `SB_Async/SB_ZpdFittingTbl_IMX284_DMHH.cpp` (0x9D4422). The same image carries IMX210/IMX094 PSF headers, so it is a shared multi-model image; which part is fitted in the a6600 is **not** established by this evidence. 6000×4000 is the a6600 still frame.
 * The only rectangle blocks found (e.g. 0x857AD0 region: 6048×4108 active, 6024×4024 effective, 6000×4000 output, then 1376×1196 / 1736×1250 / 872×625) behave like lens shading / distortion-correction grids, not a readable mode table — 1376×1196, 1736×1250 and 872×625 are not plausible video readout modes and appear next to 6000×4000 without drive-mode/fps fields.
 * **No 3:2 binning mode table** (e.g. 4240×2832, 2120×1416, 3000×2000, 6000×4000 at video rates) was found anywhere. 4240×2832 occurs only in still-size tables (`libmprctrl.so` 0x26AC4, `viewUnified2.so`).
 * `dcv_psf_table_movie*.bin` are 144-entry × 74-byte signed correction tables (header `IMX210`/`IMX094`), **not** sensor modes.
@@ -225,7 +225,7 @@ Proven:
 
 Inferred / speculation:
 
-6. The IMX284 sensor can physically deliver a 3:2 area (6000×4000 is used for stills), so a 3:2 *window* is electrically plausible; whether it can be read at video rates with the required line count is not determined statically.
+6. The sensor covers a 3:2 area (6000×4000 stills), so a 3:2 *window* is electrically plausible; whether it can be read at video rates with the required line count is not determined statically.
 7. The AVC/HEVC encoder is parametric and 4K-capable, so 1920×1280 (120×80 MB) is inside its envelope; the codec is very likely **not** the blocker.
 
 What would have to change (minimum):
