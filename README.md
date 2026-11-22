@@ -44,10 +44,11 @@ Nothing has been written to the camera. No flashing has been attempted.
 - No dynamic reference to `GetPictureSize` exists outside `libmpr.so`, so symbol
   interposition cannot reach it; the shim patches the instruction in memory
   instead (`docs/preload-path.md`).
-- `im.elf` hands `/system/av-cam.bin` to a **kernel** module as a parameter
-  string (`fn=… load=1 debug=1 adr=…`) loaded via `init_module`, not as a
-  user-space file read. An `LD_PRELOAD` shim has no interception point for it
-  (`docs/patch-map.md`).
+- `im.elf` loads `liro.ko` and passes `fn=/system/av-cam.bin …` via
+  `init_module`. `liro.ko` reads the image in kernel space and checks only
+  `ORIL` + version 4, no checksum. The kernel read cannot be intercepted, but
+  `im.elf` calls `syscall` through its PLT, so a preload shim can rewrite the
+  `fn=` path at boot (`docs/patch-map.md`).
 - No cryptographic verifier was found in any extractable update code. The
   update runs from the normal OS (`im.elf → libIMDB → libupdaterufp → crypter`)
   and checks CRC32 only; the FDAT's 256-byte trailer is never read by that path.
@@ -61,8 +62,9 @@ The runtime path is promising but incomplete. In order:
 1. Prove an interactive serial shell and a write/delete/reboot rollback of a
    harmless file under `/setting/mode/` (`docs/uart-shell.md`).
 2. Resolve how record 822's geometry is changed to match the encoder size.
-   `av-cam.bin` is a separate raw image; an `im.elf` preload does not edit it
-   (`docs/patch-map.md`).
+   Best candidate: redirect `liro.ko` to a patched copy through a `syscall`
+   interposer, so `/system` is not written. Persistent `/system` patching is the
+   fallback (`docs/patch-map.md`).
 3. Resolve sensor readout and H.264 SPS/level behaviour.
 4. Only then install the complete change, after a verified backup.
 5. Record a short 1080p24 clip and inspect it with `ffprobe`; treat any result as
@@ -87,6 +89,7 @@ unavailable or output-only.
 | `docs/a6600-vs-a6700.md` | a6600 vs a6700 platform comparison and feature-limit analysis |
 | `tools/og.c` | The `LD_PRELOAD` shim: guarded in-memory patch of the encoder size |
 | `tools/verify_patch.py` | Offline proof of the byte patch against a real `libmpr.so` |
+| `tools/verify_record.py` | Offline proof of the record-822 geometry edit in `av-cam.bin` |
 | `research/manifests/a6600-files.txt` | File listing of the decrypted firmware package |
 | `research/data/` | Dimension scan output, updater strings, annotated hex dump, FDAT round-trip log |
 | `research/scripts/` | Small analysis helpers (container layout, dimension scan, xrefs, av-cam ELF reconstruction) |
@@ -126,9 +129,10 @@ Check the patch offline, no camera needed:
 
 ```sh
 tools/build_og.sh
-python3 tools/verify_patch.py out/usr/lib/libmpr.so
-# before: 0x438 (1080)
-# after:  0x500 (1280)
+python3 tools/verify_patch.py  out/usr/lib/libmpr.so
+python3 tools/verify_record.py out/system/av-cam.bin
+# before: 0x438 (1080) / record 822 1920x1080
+# after:  0x500 (1280) / record 822 1920x1280
 # ok
 ```
 

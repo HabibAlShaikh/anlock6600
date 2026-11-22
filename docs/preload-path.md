@@ -163,11 +163,11 @@ agree, are separate problems:
    the serial console is interactive and `/setting` remains mountable; it is
    **not** recoverable from the camera UI — see `docs/uart-shell.md`.
 5. **Record delivery.** The `0x87FE0A` edit changes the encoder size request, but
-   record 822 still carries 1920×1080 plus height+8. `im.elf` only names
-   `/system/av-cam.bin` in a **kernel-module** parameter block
-   (`docs/patch-map.md` §6), so this preload cannot intercept it. How to change
-   the record at runtime, or whether a persistent write is unavoidable, is
-   unresolved.
+   record 822 still carries 1920×1080 plus height+8. `liro.ko` reads
+   `/system/av-cam.bin` in kernel space, so the read cannot be intercepted — but
+   `im.elf` calls the `syscall` that loads `liro` through its PLT, and its
+   `fn=` parameter buffer is writable. Redirecting `fn=` to a patched copy is
+   the candidate runtime route (`docs/patch-map.md` §6).
 6. **Observability.** `og.so` exits silently on every failure path and has no
    success marker. A stock-looking result cannot be distinguished from a failed
    load, a failed `mprotect`, or an unused patch. A no-op preload probe with an

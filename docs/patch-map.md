@@ -106,18 +106,30 @@ Do **not** change `0x879C60` (`+0x0C = 3`): it is the 24p match key.
    parameters match **`usr/kmod/liro.ko`**, the only module declaring
    `fn:string`, `adr:uint`, `load`, `debug` and `delay`; it imports `filp_open`
    and `vmalloc` and logs `Load firmware %s to %x`, `Magic unmatched` and
-   `version unmatched`. So kernel code reads the file, and an `LD_PRELOAD` shim
-   cannot intercept it.
+   `version unmatched`. Its loader (`liro.ko` `.init.text`, `filp_open` +
+   4 KiB `kernel_read` loop) checks exactly two things: `ORIL` at image `+4`
+   and version `4` at `+8`. **No checksum or size check was found.** The `adr=`
+   value comes from `Backup_read` IDs `0x7c` (fallback `0x76`) in `im.elf`.
 
    Delivery options, all unproven:
-   (a) persistent patch of `/system/av-cam.bin` — returns to G0;
-   (b) root `rmmod liro` + `insmod liro.ko fn=<patched copy> adr=<original>`;
-   unload safety and the original `adr` value (read from `Backup_read` by
-   `im.elf`) are unknown;
-   (c) patch the firmware in physical RAM after load (`/dev/mem` or a driver
+   (a) **Redirect the load at boot.** `im.elf` imports `syscall` and calls it
+   through its PLT (`0xb2d0`), so an `LD_PRELOAD` shim can interpose
+   `syscall(0x80, …)` and rewrite the `fn=` part of the parameter buffer to a
+   patched copy before `liro.ko` reads it. The copy could live on `/setting` or
+   a tmpfs. The kernel read itself cannot be intercepted, but its path can.
+   (b) **Persistent patch of `/system/av-cam.bin`.** `/system` is
+   `/dev/nflasha3`, 48 MiB vfat; the fallback mount entry has no `MS_RDONLY`, so
+   it is writable from a root shell. `liro.ko` would accept the edited image.
+   This is the highest-risk option and returns to G0.
+   (c) root `rmmod liro` + `insmod liro.ko fn=<patched copy> adr=<original>`;
+   unload safety is unknown. The original `adr` can be read from `dmesg`
+   (`Param:adrs=%08x`) or from backup ID `0x7c`/`0x76`.
+   (d) patch the firmware in physical RAM after load (`/dev/mem` or a driver
    interface); no evidence yet that such access exists.
 
-   Until one is proven, the no-flash route is incomplete.
+   Until one is proven, the no-flash route is incomplete. The record bytes
+   themselves are now checked offline by `tools/verify_record.py` (six bytes,
+   header and size preserved).
 
 `libmprctrl.so` has a native 3:2 still-size family at `0x26974` (`1920,1280`,
 `2048,1360`, `2128,1416`); it does not make it a movie mode.

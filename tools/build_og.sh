@@ -3,7 +3,7 @@
 set -eu
 cd "$(dirname "$0")"
 clang --target=armv7-linux-gnueabihf -march=armv7-a -mthumb \
-      -mfloat-abi=soft -O2 -fPIC -shared -nostdlib -fuse-ld=lld \
+      -mfloat-abi=soft -O2 -fPIC -fno-stack-protector -shared -nostdlib -fuse-ld=lld \
       -Wl,-soname,og.so -o og.so og.c
 
 readelf -hW og.so | grep -E 'Class|Machine|Flags'
