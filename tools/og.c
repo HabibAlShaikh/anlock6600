@@ -130,7 +130,8 @@ long syscall(long n, ...)
         char *params = (char *)c;
         const char *path = pick_copy();
         if (path && strlen(path) <= sizeof OLD_PATH - 4 && /* never grow the string */
-            strncmp(params, OLD_PATH, sizeof OLD_PATH - 1) == 0) {
+            strncmp(params, OLD_PATH, sizeof OLD_PATH - 1) == 0 &&
+            strncmp(params + sizeof OLD_PATH - 1, " load=", 6) == 0) {
             char *suffix = params + sizeof OLD_PATH - 1;
             size_t pathlen = strlen(path);
             memmove(params + 3 + pathlen, suffix, strlen(suffix) + 1);
