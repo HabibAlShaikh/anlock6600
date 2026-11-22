@@ -14,11 +14,14 @@ firmware, no keys, no patched images.
 | **Proven** | The 1.10 extraction is reproducible and hash-checked (`scripts/extract_a6600.py`, `verify: ok`). |
 | | Encoder dimensions come from `MprLibCore::GetPictureSize()` in `libmpr.so` (`0x87fdd4`); code 2 is 1920×1080. |
 | | A one-byte change at `0x87fe0a` changes that function's returned height from 1080 to 1280 — disassembly-verified offline (`tools/verify_patch.py`). It does not by itself change the record table, sensor readout or SPS. |
+| | `liro.ko` checks only `ORIL` at `+4` and version `4` at `+8` — no checksum — so a patched `av-cam.bin` copy loads like the stock one. `im.elf` builds `fn=/system/av-cam.bin …` and calls `init_module` through `syscall()`, so a preload shim can point it at a verified copy on `/log` without writing `/system` (`tools/og.c`). |
+| | `init` mounts `/dev/nflasha11` on `/log` before it execs `bootin.elf` (mount call at `0x980c`), read-write. |
+| | `tools/verify_record.py` proves the record-822 edit (six bytes) and emits the copy, without touching the source image. |
 | | `bootin.elf` reads `/setting/mode/preload` and passes it to `im.elf` as `LD_PRELOAD`; `/usr/bin/change_mode.sh` is Sony's own tool for writing those files. |
 | | `init` **unconditionally attempts** to exec `/bin/ash` on a console device at every boot; a usable serial shell is not verified (`docs/uart-shell.md`). |
 | **Blocking** | Physical UART test points, logic level and baud rate on the A6600 mainboard are unknown. |
 | | `av-cam.bin` contains **IMX284E** imager-driver symbols, but the same image also carries IMX210/IMX094 PSF headers, so it appears shared across models. The fitted part and a 3:2 readout mode at 24/30 fps are unverified. |
-| | H.264 SPS/level metadata for a 1280-high stream is unproven. |
+| | H.264 SPS/level metadata for a 1280-high stream is unproven. A stock 1080p24 clip is enough to establish the baseline: `ffprobe -show_streams clip.mp4` reports `profile`, `level` and `coded_width/height`. 1920×1280 is 9600 macroblocks, above Level 4.1's MaxFS (8192), so a compliant stream must signal Level 5.0. |
 | | The update step that copies `0800_appli/setting/*` onto `nflasha2` is not identified. |
 | | FDAT 256-byte trailer acceptance is unresolved (matters only for the flash route). |
 | **Unknown** | Whether the validators, LiroSeq and UI accept a 3:2 canvas end to end. |
