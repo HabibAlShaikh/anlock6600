@@ -115,8 +115,20 @@ Do **not** change `0x879C60` (`+0x0C = 3`): it is the 24p match key.
    (a) **Redirect the load at boot.** `im.elf` imports `syscall` and calls it
    through its PLT (`0xb2d0`), so an `LD_PRELOAD` shim can interpose
    `syscall(0x80, …)` and rewrite the `fn=` part of the parameter buffer to a
-   patched copy before `liro.ko` reads it. The copy could live on `/setting` or
-   a tmpfs. The kernel read itself cannot be intercepted, but its path can.
+   patched copy before `liro.ko` reads it. The kernel read itself cannot be
+   intercepted, but its path can. `av-cam.bin` appears in `im.elf` only in that
+   one format string (`0x4350`), so there is no second reader to satisfy.
+   The `adr=` suffix is left as printed by `im.elf`; the copy is byte-identical
+   in size and layout, so it loads at the same address.
+
+   Where the copy goes: **`/log/og-av.bin`**. `/log` is `/dev/nflasha11`,
+   500 MiB vfat, mounted by `init` with the other partitions before it starts
+   `bootin.elf`/`im.elf`; nothing in `rootfs` or `/usr` deletes files there.
+   `/setting` (20 MiB) would leave only ~4 MiB free after a 16.8 MB copy and is
+   written by the camera itself, so it is not the first choice. The SD card
+   (`/mnt`) is a fallback only: `im.elf` is what mounts it, so the path may not
+   resolve at the moment `liro.ko` loads. The shim opens the copy before
+   redirecting, so a missing `/mnt` simply means no redirect, stock image.
    (b) **Persistent patch of `/system/av-cam.bin`.** `/system` is
    `/dev/nflasha3`, 48 MiB vfat; the fallback mount entry has no `MS_RDONLY`, so
    it is writable from a root shell. `liro.ko` would accept the edited image.

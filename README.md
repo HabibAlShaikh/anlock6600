@@ -134,6 +134,9 @@ python3 tools/verify_record.py out/system/av-cam.bin
 # before: 0x438 (1080) / record 822 1920x1080
 # after:  0x500 (1280) / record 822 1920x1280
 # ok
+
+# produce the copy the shim loads, without touching the source image
+python3 tools/verify_record.py out/system/av-cam.bin --out patched-av.bin
 ```
 
 The script is pinned to the **v1.10** updater layout (`BASE=0xAE9D4`,
@@ -160,9 +163,10 @@ without touching anyone's camera.
    subdirectories? `uc_mkfs.elf` only runs `mkdosfs`; the copy is elsewhere.
 5. **`av-cam.bin` runtime delivery.** `im.elf` passes
    `fn=/system/av-cam.bin load=1 debug=1 adr=…` to `liro.ko`, which reads the
-   file with `filp_open`. Can the record table be replaced at runtime without
-   writing the partition (e.g. reload `liro` with a patched copy, or patch the
-   loaded image in RAM)?
+   file in kernel space and checks only `ORIL` + version 4. We now redirect that
+   `fn=` path through a `syscall` interposer to a patched copy on `/log`
+   (`tools/og.c`). What is missing is a way to place 16.8 MB on `/log` without a
+   root shell, and evidence that `liro` accepts the redirected path at boot.
 
 A bricked or donor A6600 board, or a service manual, is worth more than any
 amount of speculation. If you can answer one of these with reproducible
