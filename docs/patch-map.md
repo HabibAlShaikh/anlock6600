@@ -128,7 +128,7 @@ Do **not** change `0x879C60` (`+0x0C = 3`): it is the 24p match key.
    `/usr/bin/bootin.elf`. The flags are `0xC0ED0490`, so it is read-write.
    Nothing in `rootfs` or `/usr` deletes files there. `/setting` (20 MiB) would
    leave only ~4 MiB free after a 16.8 MB copy and is written by the camera
-   itself, so it is not the first choice. The SD card (`/mnt`) is a fallback
+   itself, so the shim does not look there. The SD card (`/mnt`) is a fallback
    only: `im.elf` is what mounts it, so the path may not resolve at the moment
    `liro.ko` loads. The shim opens the copy before redirecting, so a missing
    `/mnt` simply means no redirect, stock image.

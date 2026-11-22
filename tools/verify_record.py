@@ -34,9 +34,13 @@ def main():
     out_path = None
     if "--out" in args:
         i = args.index("--out")
+        if i + 1 >= len(args):
+            sys.exit("--out needs a path")
         out_path = Path(args[i + 1])
         del args[i:i + 2]
     src = Path(args[0] if args else "out/system/av-cam.bin")
+    if out_path and out_path.resolve() == src.resolve():
+        sys.exit("--out must name a different file than the input")
     data = bytearray(src.read_bytes())
 
     digest = hashlib.sha256(data).hexdigest()
@@ -49,6 +53,8 @@ def main():
         sys.exit(f"record 822 class is {data[RECORD]}, expected 6")
     if data[RECORD + 0x0C] != 3:
         sys.exit(f"record 822 rate key is {data[RECORD + 0x0C]}, expected 3")
+    if struct.unpack_from("<I", data, RECORD + 0x18)[0] != 0x336:
+        sys.exit(f"record id at +0x18 is not 0x336 (822)")
 
     original = bytes(data)
     for off, current, proposed in EDITS:

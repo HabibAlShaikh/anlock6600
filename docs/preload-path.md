@@ -1,11 +1,11 @@
 # LD_PRELOAD path — running code in `im.elf` without touching `/usr`
 
-Status: **mechanism proven statically, one-byte effect proven offline, nothing
-tested on hardware.** This is a much smaller install target than a patched
-`av-cam.bin`/`libmpr.so` partition image, but it only changes the encoder-size
-query. The capture record, sensor readout and SPS are separate and still
-unresolved. Rollback means restoring `/setting/mode/dmode`, emptying
-`preload`, removing the library and rebooting.
+Status: **mechanism proven statically, byte effects proven offline, nothing
+tested on hardware.** The shim delivers both halves now: the record table via
+a redirected `av-cam.bin` copy, and the encoder size via the patched
+`GetPictureSize`. Sensor readout and SPS are still unresolved. Rollback means
+restoring `/setting/mode/dmode`, emptying `preload`, removing the library and
+`/log/og-av.bin`, and rebooting.
 
 Target: ILCE-6600, firmware **1.10**, ARMv7 / CXD90045.
 Evidence: `out/usr/bin/bootin.elf` (13,068 B), `out/usr/bin/change_mode.sh`,
@@ -88,25 +88,32 @@ consulted for that name.
 0x87fe0a  0x87 -> 0xa0   mov.w r3, #0x500   ; 1920x1280
 ```
 
-The constructor does, in order:
+The two hooks, in the order they fire:
 
-1. `dlsym(RTLD_DEFAULT, …)` — so the patch lands on the `libmpr` instance
-   already mapped as an `im.elf` dependency. (Falling back to
-   `dlopen("/usr/lib/libmpr.so")` would map a *second* copy and patch nothing
-   the camera uses.)
-2. Verify all four bytes at `sym + 0x34`. Any mismatch → return without
-   writing, so a different firmware build is left untouched.
-3. `mprotect` → write `0xa0` at `sym + 0x36` → `__clear_cache` → restore `R|X`.
+1. `syscall(0x80, …)` — `im.elf` builds `fn=/system/av-cam.bin …` in a
+   0x400-byte buffer (`0xb32e`) and loads `liro.ko` (`0xb2d0`). The hook
+   rewrites `fn=` to a verified patched copy (`docs/patch-map.md` §6).
+2. `dlopen()` — `libmpr.so` is **not** a startup dependency of `im.elf`;
+   nothing lists it in `DT_NEEDED`. `im.elf` loads it later through
+   `libIMDB.so`'s module table, possibly transitively (`libObj.so` does
+   `NEED` it). The hook records the first handle whose scope defines
+   `GetPictureSize`, and patches only once the `fn=` redirect succeeded:
+   verify the four bytes at `sym + 0x34` (any mismatch → leave the build
+   untouched), `mprotect` (two pages: the instruction may straddle a page
+   boundary), write `0xa0` at `sym + 0x36`, `__clear_cache`, restore `R|X`.
 
-No allocation, no stdio, no `DT_NEEDED`. Undefined symbols are `dlopen`,
-`dlsym`, `sysconf`, `mprotect`, `__clear_cache`; all resolve from `libdl`,
-`libc` and `libgcc_s`, which `im.elf` already loads.
+The shim never calls `dlopen()` itself, so it cannot change the camera's
+load order. No allocation, no stdio, no `DT_NEEDED`. Undefined symbols are
+`open, close, fstat, pread, strncmp, strlen, memmove, dlsym, sysconf,
+mprotect, __clear_cache`; all resolve from `libdl`, `libc` and `libgcc_s`,
+which `im.elf` already loads.
 
 ## 5. Build and verify
 
 ```sh
-tools/build_og.sh                                   # -> tools/og.so, ARM EABI5 soft-float
-python3 tools/verify_patch.py out/usr/lib/libmpr.so
+tools/build_og.sh                                   # host fn= test, then -> og.so (armv7 EABI5)
+python3 tools/verify_patch.py  out/usr/lib/libmpr.so
+python3 tools/verify_record.py out/system/av-cam.bin
 ```
 
 `verify_patch.py` checks the pinned SHA-256, the dynamic symbol value/size, the
@@ -126,9 +133,10 @@ The shim itself needs no update container — the library plus two text files on
 vfat partition. But reaching that partition, and making the rest of the pipeline
 agree, are separate problems:
 
-> **Do not install `og.so` as an open-gate test on its own.** Record 822 still
-> requests 1920×1080 geometry, and `av-cam.bin` is not edited by an `im.elf`
-> preload (`docs/patch-map.md`). The mismatch is untested; the result may be
+> **Do not install `og.so` as an open-gate test on its own.** It now delivers
+> both halves (record 822 via the redirected copy, encoder via the patched
+> `GetPictureSize`), but the sensor readout at 3:2/24p and the H.264 SPS/level
+> are unproven, and the redirect has never run on hardware. The result may be
 > no effect, a failed recording, a corrupt file, or an application crash.
 
 1. **Serial shell** — `init` unconditionally attempts to start `/bin/ash` on a
@@ -162,12 +170,11 @@ agree, are separate problems:
 4. A broken preload library fails inside `im.elf` startup. Recoverable only if
    the serial console is interactive and `/setting` remains mountable; it is
    **not** recoverable from the camera UI — see `docs/uart-shell.md`.
-5. **Record delivery.** The `0x87FE0A` edit changes the encoder size request, but
-   record 822 still carries 1920×1080 plus height+8. `liro.ko` reads
-   `/system/av-cam.bin` in kernel space, so the read cannot be intercepted — but
-   `im.elf` calls the `syscall` that loads `liro` through its PLT, and its
-   `fn=` parameter buffer is writable. Redirecting `fn=` to a patched copy is
-   the candidate runtime route (`docs/patch-map.md` §6).
+5. **Record delivery.** Implemented in `tools/og.c`: the `syscall(128)` hook
+   rewrites `fn=` to a verified patched copy, and the `dlopen` hook patches
+   the encoder only after that load succeeded (`docs/patch-map.md` §6).
+   Unproven on hardware: that `liro` accepts the redirected path at boot, and
+   how a 16.8 MB copy can be placed on `/log` without a root shell.
 6. **Observability.** `og.so` exits silently on every failure path and has no
    success marker. A stock-looking result cannot be distinguished from a failed
    load, a failed `mprotect`, or an unused patch. A no-op preload probe with an
